@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDC — Cockpit Projet</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #f4f5f7;
+            color: #1e1e2d;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            font-size: 13px;
+        }
+
+        /* ═══════════════════ SIDEBAR ═══════════════════ */
+        .sidebar {
+            width: 220px;
+            background: #fff;
+            border-right: 1px solid #e8e8ef;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar .logo {
+            padding: 20px 18px 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid #e8e8ef;
+        }
+
+        .sidebar .logo .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #4f6ef7, #7c5cfc);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: -.5px;
+        }
+
+        .sidebar .logo-text h2 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e1e2d;
+            letter-spacing: -.3px;
+        }
+
+        .sidebar .logo-text p {
+            font-size: 10px;
+            color: #8b8ba0;
+            margin-top: 1px;
+        }
+
+        .sidebar nav {
+            flex: 1;
+            padding: 12px 10px;
+        }
+
+        .sidebar nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            color: #6b6b80;
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all .15s;
+            margin-bottom: 2px;
+        }
+
+        .sidebar nav a:hover {
+            color: #1e1e2d;
+            background: #f4f5f7;
+        }
+
+        .sidebar nav a.active {
+            color: #4f6ef7;
+            background: #eef1fe;
+            font-weight: 600;
+        }
+
+        .sidebar nav a svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+
+        .sidebar nav a .badge {
+            margin-left: auto;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ef4444;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar .user {
+            padding: 14px;
+            border-top: 1px solid #e8e8ef;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar .user .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .sidebar .user .uinfo {
+            font-size: 12px;
+            font-weight: 600;
+            color: #1e1e2d;
+        }
+
+        .sidebar .user .urole {
+            font-size: 10px;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .3px;
+            font-weight: 600;
+        }
+
+        .sidebar .user .expand {
+            margin-left: auto;
+            color: #8b8ba0;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        /* ═══════════════════ MAIN ═══════════════════ */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f4f5f7;
+        }
+
+        /* ═══════════════════ HEADER ═══════════════════ */
+        .p-header {
+            background: #fff;
+            padding: 18px 28px 0;
+            border-bottom: 1px solid #e8e8ef;
+        }
+
+        .p-header .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+        }
+
+        .p-header .title-area {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .p-header .project-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .p-header .project-icon svg {
+            width: 20px;
+            height: 20px;
+            color: #fff;
+        }
+
+        .p-header .title-info h1 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e1e2d;
+            letter-spacing: -.3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .p-header .title-info h1 .prj-badge {
+            font-size: 10px;
+            font-weight: 600;
+            color: #8b8ba0;
+            background: #f0f0f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: .2px;
+        }
+
+        .p-header .title-info .desc {
+            font-size: 11px;
+            color: #8b8ba0;
+            margin-top: 2px;
+        }
+
+        .p-header .kpis {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .p-header .kpi {
+            text-align: right;
+        }
+
+        .p-header .kpi .klabel {
+            font-size: 9px;
+            color: #8b8ba0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+        }
+
+        .p-header .kpi .kvalue {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e1e2d;
+            margin-top: 2px;
+        }
+
+        .p-header .kpi .kvalue span {
+            font-weight: 400;
+            color: #8b8ba0;
+            font-size: 11px;
+        }
+
+        .p-header .kpi.alert .klabel {
+            color: #ef4444;
+        }
+
+        .p-header .kpi.alert .kvalue {
+            color: #ef4444;
+        }
+
+        .p-header .kpi .kbar {
+            width: 72px;
+            height: 4px;
+            background: #e8e8ef;
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .p-header .kpi .kbar i {
+            display: block;
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        /* ═══════════════════ NAV BAR ═══════════════════ */
+        .nav-bar {
+            display: flex;
+            align-items: center;
+            padding: 0 28px;
+            background: #fff;
+            border-bottom: 1px solid #e8e8ef;
+            flex-shrink: 0;
+        }
+
+        .nav-bar .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 11px 14px 11px 0;
+            background: none;
+            border: none;
+            border-right: 1px solid #e8e8ef;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            color: #8b8ba0;
+            transition: .15s;
+            margin-right: 4px;
+        }
+
+        .nav-bar .back-btn:hover {
+            color: #4f6ef7;
+        }
+
+        .nav-bar .back-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .nav-bar .comp-tabs {
+            display: flex;
+            align-items: center;
+            flex: 1;
+            gap: 0;
+        }
+
+        .nav-bar .comp-tabs button {
+            padding: 11px 0;
+            margin-left: 18px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #8b8ba0;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: .15s;
+            font-family: inherit;
+        }
+
+        .nav-bar .comp-tabs button:hover {
+            color: #1e1e2d;
+        }
+
+        .nav-bar .comp-tabs button.active {
+            color: #4f6ef7;
+            border-color: #4f6ef7;
+            font-weight: 600;
+        }
+
+        .nav-bar .add-tab {
+            margin-left: auto;
+            padding: 5px 12px;
+            background: none;
+            border: 1px dashed #d0d0e0;
+            color: #8b8ba0;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: .15s;
+            font-family: inherit;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .nav-bar .add-tab:hover {
+            color: #4f6ef7;
+            border-color: #4f6ef7;
+            background: #eef1fe;
+        }
+
+        /* ═══════════════════ CONTENT ═══════════════════ */
+        .content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ═══════════════════ LEFT PANEL ═══════════════════ */
+        .left-panel {
+            width: 220px;
+            background: #fff;
+            border-right: 1px solid #e8e8ef;
+            padding: 20px 0;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .lp-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            padding: 0 16px;
+            margin-bottom: 12px;
+        }
+
+        .lp-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: all .12s;
+            font-size: 13px;
+            color: #6b6b80;
+            font-weight: 500;
+            border-left: 3px solid transparent;
+            margin-bottom: 1px;
+        }
+
+        .lp-item:hover {
+            color: #1e1e2d;
+            background: #f4f5f7;
+        }
+
+        .lp-item.active {
+            color: #4f6ef7;
+            background: #eef1fe;
+            font-weight: 600;
+            border-left-color: #4f6ef7;
+        }
+
+        .lp-item .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #d0d0e0;
+            flex-shrink: 0;
+        }
+
+        .lp-item.active .dot {
+            background: #4f6ef7;
+        }
+
+        .lp-add {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #8b8ba0;
+            font-weight: 500;
+            transition: .12s;
+            margin-top: 4px;
+        }
+
+        .lp-add:hover {
+            color: #4f6ef7;
+        }
+
+        .lp-divider {
+            height: 1px;
+            background: #e8e8ef;
+            margin: 14px 16px;
+        }
+
+        .lp-item .pct {
+            margin-left: auto;
+            font-size: 10px;
+            color: #8b8ba0;
+            font-weight: 600;
+        }
+
+        .lp-hint {
+            font-size: 10px;
+            color: #b0b0c0;
+            padding: 4px 16px;
+        }
+
+        /* ═══════════════════ MAIN CONTENT ═══════════════════ */
+        .mc {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 28px;
+            background: #f4f5f7;
+        }
+
+        /* ═══════════════════ STEPPER ═══════════════════ */
+        .stepper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 40px;
+            margin-bottom: 24px;
+            background: #fff;
+            border-radius: 12px;
+            border: 1px solid #e8e8ef;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: .15s;
+        }
+
+        .step .circle {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid #d0d0e0;
+            transition: .15s;
+            flex-shrink: 0;
+        }
+
+        .step.active .circle {
+            border-color: #4f6ef7;
+            background: #4f6ef7;
+        }
+
+        .step.done .circle {
+            border-color: #22c55e;
+            background: #22c55e;
+        }
+
+        .step .slabel {
+            font-size: 12px;
+            font-weight: 600;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            transition: .15s;
+        }
+
+        .step.active .slabel {
+            color: #4f6ef7;
+        }
+
+        .step.done .slabel {
+            color: #22c55e;
+        }
+
+        .step-line {
+            flex: 1;
+            max-width: 120px;
+            height: 2px;
+            background: #e8e8ef;
+            margin: 0 16px;
+            border-radius: 1px;
+            position: relative;
+        }
+
+        .step-line.done {
+            background: #22c55e;
+        }
+
+        /* ═══════════════════ LIVRABLES TABLE ═══════════════════ */
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .table-header h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e1e2d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-header h3 .sub {
+            font-size: 12px;
+            font-weight: 400;
+            color: #8b8ba0;
+        }
+
+        .table-header .progress-inline {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-header .progress-inline .pbar {
+            width: 160px;
+            height: 6px;
+            background: #e8e8ef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .table-header .progress-inline .pbar i {
+            display: block;
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        .table-header .progress-inline .ppct {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e1e2d;
+        }
+
+        .table-header .filter-box {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border: 1px solid #e8e8ef;
+            border-radius: 8px;
+            background: #fff;
+            font-size: 12px;
+            color: #8b8ba0;
+        }
+
+        .table-header .filter-box svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .ltable {
+            background: #fff;
+            border-radius: 12px;
+            border: 1px solid #e8e8ef;
+            overflow: hidden;
+        }
+
+        .ltable .thead {
+            display: grid;
+            grid-template-columns: 2fr 1.2fr 1fr 0.8fr 0.7fr;
+            padding: 10px 20px;
+            background: #fafafc;
+            border-bottom: 1px solid #e8e8ef;
+        }
+
+        .ltable .thead span {
+            font-size: 10px;
+            font-weight: 700;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+        }
+
+        .ltable .trow {
+            display: grid;
+            grid-template-columns: 2fr 1.2fr 1fr 0.8fr 0.7fr;
+            padding: 14px 20px;
+            border-bottom: 1px solid #f0f0f5;
+            align-items: center;
+            cursor: pointer;
+            transition: .1s;
+        }
+
+        .ltable .trow:hover {
+            background: #fafafc;
+        }
+
+        .ltable .trow:last-child {
+            border-bottom: none;
+        }
+
+        .ltable .trow .doc-cell {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .ltable .trow .doc-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .ltable .trow .doc-icon.pdf {
+            background: #fef2f2;
+            color: #ef4444;
+        }
+
+        .ltable .trow .doc-icon.xls {
+            background: #f0fdf4;
+            color: #22c55e;
+        }
+
+        .ltable .trow .doc-icon.doc {
+            background: #eff6ff;
+            color: #3b82f6;
+        }
+
+        .ltable .trow .doc-icon.plan {
+            background: #faf5ff;
+            color: #a855f7;
+        }
+
+        .ltable .trow .doc-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e1e2d;
+        }
+
+        .ltable .trow .doc-desc {
+            font-size: 11px;
+            color: #8b8ba0;
+            margin-top: 2px;
+        }
+
+        .ltable .trow .resp-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ltable .trow .resp-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .ltable .trow .resp-name {
+            font-size: 12px;
+            color: #6b6b80;
+            font-weight: 500;
+        }
+
+        .ltable .trow .date-cell {
+            font-size: 12px;
+            color: #6b6b80;
+            font-weight: 500;
+        }
+
+        .ltable .trow .date-cell.overdue {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        /* Status badges */
+        .badge-status {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .badge-status.valide {
+            background: #f0fdf4;
+            color: #16a34a;
+            border: 1px solid #bbf7d0;
+        }
+
+        .badge-status.depose {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+        }
+
+        .badge-status.manquant {
+            background: #fff7ed;
+            color: #ea580c;
+            border: 1px solid #fed7aa;
+        }
+
+        .badge-status.attente {
+            background: #fefce8;
+            color: #ca8a04;
+            border: 1px solid #fef08a;
+        }
+
+        /* Actions */
+        .actions-cell {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            justify-content: flex-end;
+        }
+
+        .act-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #8b8ba0;
+            transition: .12s;
+            border: none;
+            background: none;
+        }
+
+        .act-icon:hover {
+            background: #f0f0f5;
+            color: #4f6ef7;
+        }
+
+        .act-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .btn-depose {
+            padding: 5px 14px;
+            border-radius: 6px;
+            background: #4f6ef7;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+            transition: .15s;
+        }
+
+        .btn-depose:hover {
+            background: #3d5bd9;
+        }
+
+        /* Expanded file list */
+        .file-expand {
+            padding: 0 20px 14px 68px;
+            background: #fafafc;
+            border-bottom: 1px solid #f0f0f5;
+            display: none;
+        }
+
+        .file-expand.open {
+            display: block;
+        }
+
+        .fex-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 0;
+        }
+
+        .fex-row .fex-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .fex-row .fex-icon.pdf {
+            color: #ef4444;
+        }
+
+        .fex-row .fex-icon.dwg {
+            color: #a855f7;
+        }
+
+        .fex-row .fex-icon.zip {
+            color: #f59e0b;
+        }
+
+        .fex-row .fex-name {
+            font-size: 12px;
+            color: #4f6ef7;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .fex-row .fex-name:hover {
+            text-decoration: underline;
+        }
+
+        .fex-row .fex-size {
+            font-size: 11px;
+            color: #8b8ba0;
+            margin-left: auto;
+        }
+
+        .fex-add {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 0;
+            font-size: 11px;
+            color: #4f6ef7;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+
+        .fex-add:hover {
+            text-decoration: underline;
+        }
+
+        /* ═══════════════════ VUE D'ENSEMBLE ═══════════════════ */
+        .gs-section {
+            margin-bottom: 24px;
+        }
+
+        .gs-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            margin-bottom: 12px;
+        }
+
+        .gs-card {
+            background: #fff;
+            border: 1px solid #e8e8ef;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: .15s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .gs-card:hover {
+            border-color: #4f6ef7;
+            box-shadow: 0 2px 8px rgba(79, 110, 247, .08);
+        }
+
+        .gs-card .gs-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e1e2d;
+        }
+
+        .gs-card .gs-desc {
+            font-size: 11px;
+            color: #8b8ba0;
+            margin-top: 2px;
+        }
+
+        .gs-card .gs-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+        }
+
+        .gs-card .gs-badge.ok {
+            background: #f0fdf4;
+            color: #16a34a;
+            border: 1px solid #bbf7d0;
+        }
+
+        .gs-card .gs-badge.progress {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+        }
+
+        /* ═══════════════════ EXECUTION METRICS ═══════════════════ */
+        .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .m-card {
+            background: #fff;
+            border: 1px solid #e8e8ef;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .m-card .m-label {
+            font-size: 10px;
+            color: #8b8ba0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+
+        .m-card .m-val {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1e1e2d;
+            margin-top: 4px;
+        }
+
+        .m-card .m-val span {
+            font-size: 12px;
+            font-weight: 400;
+            color: #8b8ba0;
+        }
+
+        .m-card .m-bar {
+            height: 4px;
+            background: #e8e8ef;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .m-card .m-bar i {
+            display: block;
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .m-card .m-sub {
+            font-size: 10px;
+            color: #8b8ba0;
+            margin-top: 6px;
+        }
+
+        .m-card.alert {
+            border-color: #fecaca;
+            background: #fef2f2;
+        }
+
+        .m-card.alert .m-val {
+            color: #ef4444;
+        }
+
+        .alert-msg {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 11px;
+            color: #ef4444;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+
+        /* Activity cards for execution */
+        .act-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #8b8ba0;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            margin-bottom: 12px;
+        }
+
+        .a-card {
+            background: #fff;
+            border: 1px solid #e8e8ef;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: .15s;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .a-card:hover {
+            border-color: #d0d0e0;
+        }
+
+        .a-card.open {
+            border-color: #d0d0e0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .04);
+        }
+
+        .a-card .a-head {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            gap: 12px;
+        }
+
+        .a-card .a-head .a-badge {
+            font-size: 9px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .a-card .a-head .a-badge.exec {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .a-card .a-head .a-badge.done {
+            background: #f0fdf4;
+            color: #16a34a;
+        }
+
+        .a-card .a-head .a-badge.idle {
+            background: #f4f4f8;
+            color: #8b8ba0;
+        }
+
+        .a-card .a-head .a-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e1e2d;
+            flex: 1;
+        }
+
+        .a-card .a-head .a-bar {
+            width: 80px;
+            height: 4px;
+            background: #e8e8ef;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .a-card .a-head .a-bar i {
+            display: block;
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .a-card .a-head .a-pct {
+            font-size: 12px;
+            font-weight: 700;
+            color: #6b6b80;
+            min-width: 32px;
+            text-align: right;
+        }
+
+        .a-card .a-head .chevron {
+            color: #8b8ba0;
+            font-size: 16px;
+            transition: .2s;
+            margin-left: 4px;
+        }
+
+        .a-card.open .a-head .chevron {
+            transform: rotate(90deg);
+            color: #4f6ef7;
+        }
+
+        .a-body {
+            padding: 4px 16px 16px;
+            border-top: 1px solid #f0f0f5;
+        }
+
+        /* Validation bar */
+        .val-bar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #e8e8ef;
+        }
+
+        .btn {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: .15s;
+        }
+
+        .btn-ghost {
+            background: none;
+            color: #8b8ba0;
+        }
+
+        .btn-ghost:hover {
+            color: #1e1e2d;
+        }
+
+        .btn-primary {
+            background: #4f6ef7;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #3d5bd9;
+        }
+
+        .btn-secondary {
+            background: #f0f0f5;
+            color: #6b6b80;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0ea;
+            color: #1e1e2d;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+    <aside class="sidebar">
+        <div class="logo">
+            <div class="logo-icon">E</div>
+            <div class="logo-text">
+                <h2>EDC</h2>
+                <p>Espace de Coordination</p>
+            </div>
+        </div>
+        <nav>
+            <a href="#">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+                Tableau de bord
+            </a>
+            <a href="#" class="active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                Projets
+            </a>
+            <a href="#">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 01-3.46 0" />
+                </svg>
+                Alertes
+                <span class="badge">3</span>
+            </a>
+        </nav>
+        <div class="user">
+            <div class="avatar">IM</div>
+            <div>
+                <div class="uinfo">Ibrahim M.</div>
+                <div class="urole">Chef de Projet</div>
+            </div>
+            <span class="expand">›</span>
+        </div>
+    </aside>
+
+    <!-- ═══════════════════ MAIN ═══════════════════ -->
+    <div class="main">
+        <!-- HEADER -->
+        <div class="p-header">
+            <div class="top">
+                <div class="title-area">
+                    <div class="project-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                            <path d="M2 17l10 5 10-5" />
+                            <path d="M2 12l10 5 10-5" />
+                        </svg></div>
+                    <div class="title-info">
+                        <h1>Lom Pangar <span class="prj-badge">PRJ-2008-001</span></h1>
+                        <div class="desc">Infrastructure Hydroélectrique • Région de l'Est</div>
+                    </div>
+                </div>
+                <div class="kpis">
+                    <div class="kpi">
+                        <div class="klabel">Budget</div>
+                        <div class="kvalue">420 Mrd <span>FCFA</span></div>
+                    </div>
+                    <div class="kpi">
+                        <div class="klabel">Avancement</div>
+                        <div class="kvalue">72%</div>
+                        <div class="kbar"><i style="width:72%;background:linear-gradient(90deg,#22c55e,#16a34a);"></i>
+                        </div>
+                    </div>
+                    <div class="kpi alert">
+                        <div class="klabel">Alertes</div>
+                        <div class="kvalue" style="display:flex;align-items:center;gap:6px;">2 <span
+                                style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NAV BAR -->
+        <div class="nav-bar hidden" id="navBar">
+            <button class="back-btn" onclick="goBack()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5" />
+                    <path d="M12 19l-7-7 7-7" />
+                </svg>
+                Vue d'ensemble
+            </button>
+            <div class="comp-tabs" id="compTabs"></div>
+            <button class="add-tab" onclick="alert('Formulaire d\'ajout d\'un nouveau composant')">+ Ajouter</button>
+        </div>
+
+        <!-- CONTENT -->
+        <div class="content">
+            <div class="left-panel hidden" id="leftPanel">
+                <div class="lp-title">Sous-composants</div>
+                <div id="scompList"></div>
+                <div class="lp-add" onclick="alert('Ajouter un sous-composant')">+ Ajouter</div>
+                <div class="lp-divider"></div>
+                <div class="lp-title" id="actTitle">Activités</div>
+                <div id="actList"></div>
+                <div class="lp-add hidden" id="addActBtn" onclick="alert('Ajouter une activité')">+ Ajouter</div>
+            </div>
+            <div class="mc" id="mainContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // ══════════════════════════════════════
+        // DATA
+        // ══════════════════════════════════════
+        const ETUDE_DOCS = [
+            {
+                name: 'Avant-Projet Sommaire (APS)', desc: 'Dossier technique complet validé', type: 'pdf', resp: 'Bureau d\'études A', respColor: '#4f6ef7', date: '12/01/24', status: 'valide',
+                files: [{ name: 'Rapport_General_v2.pdf', size: '12.4 MB', type: 'pdf' }, { name: 'Plans_Architecturaux.dwg', size: '45.2 MB', type: 'dwg' }, { name: 'Annexes_Etude_Impact.zip', size: '108 MB', type: 'zip' }]
+            },
+            { name: 'Avant-Projet Détaillé (APD)', desc: 'V.2.0 • PDF', type: 'pdf', resp: 'Bureau d\'études B', respColor: '#a855f7', date: '20 Jan 2024', status: 'depose', files: [] },
+            { name: 'Budget Prévisionnel', desc: 'V.2.1 • Excel', type: 'xls', resp: 'EDC Finance', respColor: '#3b82f6', date: '25 Jan 2024', status: 'depose', files: [] },
+            { name: 'Étude de faisabilité', desc: 'En attente de dépôt', type: 'pdf', resp: 'Consultant Ext.', respColor: '#f59e0b', date: '01 Fév 2024', status: 'manquant', files: [] },
+            { name: 'Pièces graphiques', desc: 'Plans et schémas techniques', type: 'plan', resp: 'Topo Services', respColor: '#22c55e', date: '15 Fév 2024', status: 'depose', files: [] },
+        ];
+
+        const PASSATION_DOCS = [
+            { name: 'DAO', desc: 'Dossier d\'appel d\'offres', type: 'pdf', resp: 'Cellule Passation', respColor: '#4f6ef7', date: '10 Mar 2024', status: 'valide', files: [] },
+            { name: 'Avis d\'appel d\'offres', desc: 'Publication officielle', type: 'doc', resp: 'Communication', respColor: '#a855f7', date: '15 Mar 2024', status: 'depose', files: [] },
+            { name: 'Offres soumissionnaires', desc: 'Plis reçus', type: 'pdf', resp: 'Cellule Passation', respColor: '#4f6ef7', date: '30 Avr 2024', status: 'attente', files: [] },
+            { name: 'PV ouverture des plis', desc: 'Procès-verbal CPM', type: 'pdf', resp: 'CPM', respColor: '#f59e0b', date: '05 Mai 2024', status: 'manquant', files: [] },
+            { name: 'PV proposition d\'attribution', desc: 'Recommandation CPM', type: 'pdf', resp: 'CPM', respColor: '#f59e0b', date: '10 Mai 2024', status: 'manquant', files: [] },
+            { name: 'ANO DAO', desc: 'No-objection bailleur', type: 'pdf', resp: 'Bailleur', respColor: '#22c55e', date: '20 Mai 2024', status: 'manquant', files: [] },
+            { name: 'Décision d\'attribution', desc: 'Notification officielle', type: 'pdf', resp: 'DG', respColor: '#ef4444', date: '01 Jun 2024', status: 'manquant', files: [] },
+            { name: 'Contrat signé', desc: 'Marché final', type: 'pdf', resp: 'Juridique', respColor: '#6366f1', date: '15 Jun 2024', status: 'manquant', files: [] },
+        ];
+
+        const EXECUTION_DOCS = [
+            { name: 'Contrat de base', desc: 'Marché signé', type: 'pdf', resp: 'Juridique', respColor: '#6366f1', date: '—', status: 'manquant', files: [] },
+            { name: 'OS de démarrage', desc: 'Ordre de service', type: 'pdf', resp: 'MOE', respColor: '#4f6ef7', date: '—', status: 'manquant', files: [] },
+            { name: 'Plan d\'exécution', desc: 'Planning & méthodologie', type: 'pdf', resp: 'Entreprise', respColor: '#22c55e', date: '—', status: 'manquant', files: [] },
+            { name: 'Garantie de bonne exécution', desc: 'Caution bancaire', type: 'pdf', resp: 'Entreprise', respColor: '#22c55e', date: '—', status: 'manquant', files: [] },
+            { name: 'Assurance TRC', desc: 'Tous risques chantier', type: 'pdf', resp: 'Entreprise', respColor: '#22c55e', date: '—', status: 'manquant', files: [] },
+            { name: 'PV réception provisoire', desc: 'Réception travaux', type: 'pdf', resp: 'MOE', respColor: '#4f6ef7', date: '—', status: 'manquant', files: [] },
+            { name: 'Décompte final', desc: 'Facture finale', type: 'xls', resp: 'EDC Finance', respColor: '#3b82f6', date: '—', status: 'manquant', files: [] },
+        ];
+
+        const PROJECT = {
+            components: [
+                {
+                    id: 'barrage', name: 'Barrage', status: 'progress', desc: 'Infrastructure principale',
+                    sousComposants: [
+                        { id: 'fond', name: 'Fondations', activities: [{ name: 'Fouilles', pct: 100, status: 'done' }, { name: 'Béton de propreté', pct: 80, status: 'exec' }] },
+                        { id: 'corps', name: 'Corps barrage', activities: [{ name: 'Montage des murs', pct: 60, status: 'exec' }, { name: 'Passage graviers', pct: 30, status: 'exec' }, { name: 'Fondations profondes', pct: 100, status: 'done' }, { name: 'Toiture & finitions', pct: 0, status: 'idle' }] },
+                        { id: 'evac', name: 'Évacuateur de crues', activities: [{ name: 'Terrassement', pct: 45, status: 'exec' }] },
+                        { id: 'prise', name: 'Ouvrage de prise', activities: [{ name: 'Coffrage', pct: 10, status: 'exec' }] },
+                    ]
+                },
+                {
+                    id: 'usine', name: 'Usine', status: 'progress', desc: 'Production électrique',
+                    sousComposants: [
+                        { id: 'turb', name: 'Turbines', activities: [{ name: 'Montage turbine Francis', pct: 15, status: 'exec' }] },
+                        { id: 'gen', name: 'Générateurs', activities: [{ name: 'Installation alternateurs', pct: 0, status: 'idle' }] },
+                        { id: 'ctrl', name: 'Contrôle-commande', activities: [{ name: 'Système SCADA', pct: 0, status: 'idle' }] },
+                    ]
+                },
+                {
+                    id: 'route', name: 'Route d\'accès', status: 'progress', desc: 'Voirie & accès chantier',
+                    sousComposants: [
+                        { id: 'terr', name: 'Terrassement', activities: [{ name: 'Déblais', pct: 70, status: 'exec' }] },
+                        { id: 'chau', name: 'Chaussée', activities: [{ name: 'Enrobé', pct: 0, status: 'idle' }] },
+                    ]
+                },
+                {
+                    id: 'cite', name: 'Cité', status: 'ok', desc: 'Logements & services',
+                    sousComposants: [
+                        { id: 'log', name: 'Logements', activities: [{ name: 'Construction', pct: 100, status: 'done' }, { name: 'Aménagement', pct: 90, status: 'exec' }] },
+                        { id: 'vrd', name: 'VRD', activities: [{ name: 'Voirie', pct: 100, status: 'done' }, { name: 'Réseaux', pct: 85, status: 'exec' }] },
+                    ]
+                },
+            ],
+        };
+
+        // ══════════════════════════════════════
+        // STATE
+        // ══════════════════════════════════════
+        let currentComp = null;
+        let currentSComp = null;
+        let currentPhase = 'etude';
+
+        // ══════════════════════════════════════
+        // RENDER TABS
+        // ══════════════════════════════════════
+        function renderCompTabs() {
+            const navBar = document.getElementById('navBar');
+            const el = document.getElementById('compTabs');
+            if (!currentComp) { navBar.classList.add('hidden'); return; }
+            navBar.classList.remove('hidden');
+            let html = '';
+            PROJECT.components.forEach(c => {
+                html += `<button class="${currentComp === c.id ? 'active' : ''}" onclick="selectComp('${c.id}')">${c.name}</button>`;
+            });
+            el.innerHTML = html;
+        }
+
+        // ══════════════════════════════════════
+        // NAVIGATION
+        // ══════════════════════════════════════
+        function selectComp(compId) {
+            currentComp = compId;
+            currentSComp = null;
+            currentPhase = 'etude';
+            renderCompTabs(); renderLeftPanel(); renderMainContent();
+        }
+        function goBack() {
+            currentComp = null; currentSComp = null; currentPhase = 'etude';
+            renderCompTabs(); renderLeftPanel(); renderMainContent();
+        }
+        function selectSComp(scompId) {
+            currentSComp = scompId; currentPhase = 'etude';
+            renderLeftPanel(); renderMainContent();
+        }
+
+        // ══════════════════════════════════════
+        // LEFT PANEL
+        // ══════════════════════════════════════
+        function renderLeftPanel() {
+            const panel = document.getElementById('leftPanel');
+            const list = document.getElementById('scompList');
+            const actList = document.getElementById('actList');
+            const actTitle = document.getElementById('actTitle');
+            const addActBtn = document.getElementById('addActBtn');
+            if (!currentComp) { panel.classList.add('hidden'); return; }
+            panel.classList.remove('hidden');
+            const comp = PROJECT.components.find(c => c.id === currentComp);
+            if (!comp) return;
+
+            // Sous-composants
+            let html = '';
+            comp.sousComposants.forEach(sc => {
+                const active = currentSComp === sc.id ? ' active' : '';
+                html += `<div class="lp-item${active}" onclick="selectSComp('${sc.id}')"><span class="dot"></span>${sc.name}</div>`;
+            });
+            list.innerHTML = html;
+
+            // Activités — only when a sous-composant is selected
+            if (currentSComp) {
+                const sc = comp.sousComposants.find(s => s.id === currentSComp);
+                if (sc) {
+                    actTitle.textContent = `Activités — ${sc.name}`;
+                    let ah = '';
+                    sc.activities.forEach(a => {
+                        const dotColor = a.pct === 100 ? '#22c55e' : a.pct > 0 ? '#4f6ef7' : '#d0d0e0';
+                        ah += `<div class="lp-item" onclick="showActivityExec('${sc.id}')"><span class="dot" style="background:${dotColor}"></span>${a.name}<span class="pct">${a.pct}%</span></div>`;
+                    });
+                    actList.innerHTML = ah;
+                    addActBtn.classList.remove('hidden');
+                }
+            } else {
+                actTitle.textContent = 'Activités';
+                actList.innerHTML = '<p class="lp-hint">Sélectionnez un sous-composant</p>';
+                addActBtn.classList.add('hidden');
+            }
+        }
+
+        function showActivityExec(scompId) {
+            currentSComp = scompId;
+            currentPhase = 'execution';
+            renderLeftPanel();
+            renderMainContent();
+        }
+
+        // ══════════════════════════════════════
+        // STEPPER HTML
+        // ══════════════════════════════════════
+        function renderStepper() {
+            const eClass = currentPhase === 'etude' ? 'active' : currentPhase === 'passation' || currentPhase === 'execution' ? 'done' : '';
+            const pClass = currentPhase === 'passation' ? 'active' : currentPhase === 'execution' ? 'done' : '';
+            const exClass = currentPhase === 'execution' ? 'active' : '';
+            const l1 = currentPhase === 'passation' || currentPhase === 'execution' ? ' done' : '';
+            const l2 = currentPhase === 'execution' ? ' done' : '';
+            return `<div class="stepper">
+    <div class="step ${eClass}" onclick="switchPhase('etude')"><div class="circle"></div><span class="slabel">Étude</span></div>
+    <div class="step-line${l1}"></div>
+    <div class="step ${pClass}" onclick="switchPhase('passation')"><div class="circle"></div><span class="slabel">Passation</span></div>
+    <div class="step-line${l2}"></div>
+    <div class="step ${exClass}" onclick="switchPhase('execution')"><div class="circle"></div><span class="slabel">Exécution</span></div>
+  </div>`;
+        }
+
+        // ══════════════════════════════════════
+        // LIVRABLES TABLE
+        // ══════════════════════════════════════
+        function renderLivrablesTable(docs, context) {
+            const deposedCount = docs.filter(d => d.status === 'valide' || d.status === 'depose').length;
+            const pct = Math.round((deposedCount / docs.length) * 100);
+            const barColor = pct >= 80 ? '#22c55e' : pct >= 40 ? '#4f6ef7' : '#f59e0b';
+            let html = `<div class="table-header">
+    <h3>Liste des Livrables <span class="sub">(${context})</span>
+      <span class="progress-inline"><span class="pbar"><i style="width:${pct}%;background:${barColor};"></i></span><span class="ppct">${pct}%</span></span>
+    </h3>
+    <div class="filter-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>Filtrer...</div>
+  </div>`;
+            html += `<div class="ltable"><div class="thead"><span>Document</span><span>Responsable</span><span>Date Limite</span><span>Statut</span><span style="text-align:right">Action</span></div>`;
+            docs.forEach((d, i) => {
+                const statusLabel = d.status === 'valide' ? 'Validé' : d.status === 'depose' ? 'Déposé' : d.status === 'attente' ? 'En attente' : 'Manquant';
+                const initials = d.resp.split(' ').map(w => w[0]).join('').substring(0, 2);
+                const hasFiles = d.files && d.files.length > 0;
+                const actionHtml = d.status === 'manquant'
+                    ? `<button class="btn-depose" onclick="event.stopPropagation();alert('Déposer : ${d.name.replace(/'/g, "\\'")}')">Déposer</button>`
+                    : `<span class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>`;
+                html += `<div class="trow" onclick="toggleExpand(${i})"><div class="doc-cell"><div class="doc-icon ${d.type}">${d.type}</div><div><div class="doc-name">${d.name}</div><div class="doc-desc">${d.desc}</div></div></div><div class="resp-cell"><div class="resp-avatar" style="background:${d.respColor}">${initials}</div><span class="resp-name">${d.resp}</span></div><div class="date-cell">${d.date}</div><span class="badge-status ${d.status}">${statusLabel}</span><div class="actions-cell">${actionHtml}<span class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></span></div></div>`;
+                // File expand
+                if (hasFiles) {
+                    let filesHtml = '';
+                    d.files.forEach(f => {
+                        const ficon = f.type === 'pdf' ? 'pdf' : f.type === 'dwg' ? 'dwg' : 'zip';
+                        filesHtml += `<div class="fex-row"><svg class="fex-icon ${ficon}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="fex-name">${f.name}</span><span class="fex-size">${f.size}</span></div>`;
+                    });
+                    filesHtml += `<div class="fex-add" onclick="event.stopPropagation();alert('Ajouter un fichier')">+ Ajouter un fichier</div>`;
+                    html += `<div class="file-expand" id="expand-${i}">${filesHtml}</div>`;
+                }
+            });
+            html += `</div>`;
+            return html;
+        }
+
+        // ══════════════════════════════════════
+        // MAIN CONTENT
+        // ══════════════════════════════════════
+        function renderMainContent() {
+            const mc = document.getElementById('mainContent');
+
+            // VUE D'ENSEMBLE
+            if (!currentComp) {
+                let html = `<div style="margin-bottom:20px"><h2 style="font-size:16px;font-weight:700;color:#1e1e2d;">Étude Globale du Projet</h2><p style="font-size:12px;color:#8b8ba0;margin-top:3px;">Documents fondateurs et vue d'ensemble</p></div>`;
+                html += renderLivrablesTable(ETUDE_DOCS, 'Projet');
+                html += `<div style="margin-top:28px;"><div class="gs-title">Composants du projet</div>`;
+                PROJECT.components.forEach(c => {
+                    const sc = c.sousComposants.length;
+                    html += `<div class="gs-card" onclick="selectComp('${c.id}')"><div><div class="gs-name">${c.name}</div><div class="gs-desc">${c.desc} · ${sc} sous-composant${sc > 1 ? 's' : ''}</div></div><span class="gs-badge ${c.status}">${c.status === 'ok' ? 'Validé' : 'En cours'}</span></div>`;
+                });
+                html += `</div>`;
+                mc.innerHTML = html;
+                return;
+            }
+
+            const comp = PROJECT.components.find(c => c.id === currentComp);
+            if (!comp) return;
+            const ctx = currentSComp ? comp.sousComposants.find(s => s.id === currentSComp)?.name || comp.name : comp.name;
+
+            // EXÉCUTION
+            if (currentPhase === 'execution' && currentSComp) {
+                const sc = comp.sousComposants.find(s => s.id === currentSComp);
+                let html = renderStepper();
+                html += renderMetrics();
+                html += `<div class="act-label">Activités — ${sc.name}</div>`;
+                sc.activities.forEach((a) => {
+                    const badgeClass = a.status === 'done' ? 'done' : a.status === 'exec' ? 'exec' : 'idle';
+                    const badgeText = a.status === 'done' ? 'Terminée' : a.status === 'exec' ? 'Exécution' : 'Non démarrée';
+                    const barColor = a.pct === 100 ? '#22c55e' : a.pct > 0 ? '#4f6ef7' : 'transparent';
+                    html += `<div class="a-card" onclick="toggleA(this)"><div class="a-head"><span class="a-badge ${badgeClass}">${badgeText}</span><span class="a-name">${a.name}</span><span class="a-bar"><i style="width:${a.pct}%;background:${barColor};"></i></span><span class="a-pct">${a.pct}%</span><span class="chevron">›</span></div><div class="a-body" style="display:none;">${renderLivrablesTable(EXECUTION_DOCS, a.name)}</div></div>`;
+                });
+                mc.innerHTML = html;
+                return;
+            }
+
+            // ÉTUDE / PASSATION
+            const docs = currentPhase === 'etude' ? ETUDE_DOCS : PASSATION_DOCS;
+            let html = renderStepper();
+            html += renderLivrablesTable(docs, ctx);
+            html += renderValBar(currentPhase);
+            mc.innerHTML = html;
+        }
+
+        function renderMetrics() {
+            return `<div class="metrics-row">
+    <div class="m-card"><div class="m-label">Budget consommé</div><div class="m-val">80% <span>108 Mrd</span></div><div class="m-bar"><i style="width:80%;background:#eab308;"></i></div><div class="m-sub">4 décomptes payés · 1 en cours</div></div>
+    <div class="m-card"><div class="m-label">Temps consommé</div><div class="m-val">65% <span>3.2 ans</span></div><div class="m-bar"><i style="width:65%;background:#4f6ef7;"></i></div><div class="m-sub">Reste 1.7 ans</div></div>
+    <div class="m-card alert"><div class="m-label">Avancement réel</div><div class="m-val">25% <span>retard</span></div><div class="m-bar"><i style="width:25%;background:#ef4444;"></i></div><div class="alert-msg">Disproportion : 80% budget · 65% temps · 25% réel</div></div>
+  </div>`;
+        }
+
+        function renderValBar(phase) {
+            const txt = phase === 'etude' ? "Valider l\'étude" : "Valider le marché";
+            return `<div class="val-bar"><button class="btn btn-ghost">En cours</button><button class="btn btn-primary" onclick="alert('⚠️ ${txt} ?\\n\\nAction irréversible sans administrateur.')">${phase === 'etude' ? "Valider l'étude" : "Valider le marché"}</button></div>`;
+        }
+
+        // ══════════════════════════════════════
+        // INTERACTIONS
+        // ══════════════════════════════════════
+        function switchPhase(phase) {
+            currentPhase = phase;
+            renderMainContent();
+        }
+        function toggleExpand(idx) {
+            const el = document.getElementById('expand-' + idx);
+            if (el) el.classList.toggle('open');
+        }
+        function toggleA(card) {
+            card.classList.toggle('open');
+            const body = card.querySelector('.a-body');
+            if (body) body.style.display = card.classList.contains('open') ? 'block' : 'none';
+        }
+
+        // INIT
+        renderCompTabs(); renderLeftPanel(); renderMainContent();
+    </script>
+</body>
+
+</html>
