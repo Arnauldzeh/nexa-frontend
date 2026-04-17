@@ -1,26 +1,54 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, ChevronRight, AlertCircle, Plus } from "lucide-react";
+import { Settings, Plus, Users, Edit2 } from "lucide-react";
 import Link from "next/link";
-import { getProjects, ProjectData } from "@/lib/projectStore";
-import { getUnresolvedCountForProject, subscribeToAlerts } from "@/lib/alertStore";
+import { getProjects, formatProjectBudget, getProjectLocation, type Project } from "@/lib/projectStore";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
+import { getErrorMessage } from "@/services/api/client";
 
 // ══════════════════════════════════════
-// PAGE
+// PAGE — INITIALISATION
 // ══════════════════════════════════════
 
 export default function ProjectsPage() {
-    const [projects, setProjects] = useState<ProjectData[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchProjects = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const data = await getProjects();
+            setProjects(data);
+        } catch (err: any) {
+            setError(getErrorMessage(err));
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        setProjects(getProjects());
-        const unsubscribe = subscribeToAlerts(() => setProjects(getProjects()));
-        return unsubscribe;
+        fetchProjects();
     }, []);
 
-    const getBarColor = (pct: number) =>
-        pct >= 80 ? "bg-green-500" : pct >= 40 ? "bg-blue-500" : pct > 0 ? "bg-amber-500" : "bg-[var(--bg-surface-active)]";
+    if (loading) {
+        return (
+            <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full">
+                <LoadingSpinner size="lg" className="min-h-[400px]" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full">
+                <ErrorDisplay error={error} retry={fetchProjects} />
+            </div>
+        );
+    }
 
     return (
         <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full">
@@ -28,11 +56,11 @@ export default function ProjectsPage() {
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h1 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2.5 tracking-tight">
-                        <FolderOpen size={20} strokeWidth={1.8} className="text-[var(--text-tertiary)]" />
-                        Projets
+                        <Settings size={20} strokeWidth={1.8} className="text-[var(--text-tertiary)]" />
+                        Initialisation
                     </h1>
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5 font-medium">
-                        Configuration et structure des projets d&apos;infrastructure
+                        Créez, configurez et paramétrez vos projets d&apos;infrastructure
                     </p>
                 </div>
                 <Link
@@ -45,54 +73,81 @@ export default function ProjectsPage() {
 
             {/* ── Project List ── */}
             <div className="flex flex-col gap-3">
-                {projects.map((project) => (
-                    <Link key={project.id} href={`/projects/${project.id}`}>
-                        <div className="group flex items-center bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200 cursor-pointer">
-                            {/* Accent stripe */}
-                            <div className="w-1 self-stretch flex-shrink-0 bg-blue-500" />
+                {projects.map((project) => {
+                    const totalComp = project.components?.length || 0;
+                    const totalSC = project.components?.reduce((s, c) => s + (c.sousComposants?.length || 0), 0) || 0;
+                    const totalAct = project.components?.reduce((s, c) => 
+                        s + (c.sousComposants?.reduce((ss, sc) => ss + (sc.activities?.length || 0), 0) || 0), 0) || 0;
+                    
+                    return (
+                        <div key={project.code} className="group bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200">
+                            <div className="flex items-center">
+                                {/* Accent stripe */}
+                                <div className="w-1 self-stretch flex-shrink-0 bg-blue-500" />
 
-                            <div className="flex flex-1 items-center px-5 py-4 gap-6">
-                                {/* Project Info */}
-                                <div className="flex-1 min-w-[180px]">
-                                    <h3 className="text-[14px] font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-                                        {project.name}
-                                    </h3>
-                                    <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--text-secondary)]">
-                                        <span className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-inset)] text-[var(--text-secondary)] text-[10px] font-semibold">
-                                            {project.region}
-                                        </span>
-                                        <span className="text-[var(--text-tertiary)]">·</span>
-                                        <span>{project.budget}</span>
+                                <div className="flex flex-1 items-center px-5 py-4 gap-6">
+                                    {/* Project Info */}
+                                    <div className="flex-1 min-w-[180px]">
+                                        <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">
+                                            {project.name}
+                                        </h3>
+                                        <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--text-secondary)]">
+                                            <span className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-inset)] text-[var(--text-secondary)] text-[10px] font-semibold">
+                                                {project.code}
+                                            </span>
+                                            <span className="text-[var(--text-tertiary)]">·</span>
+                                            <span>{getProjectLocation(project)}</span>
+                                            <span className="text-[var(--text-tertiary)]">·</span>
+                                            <span>{formatProjectBudget(project)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Structure summary */}
+                                    <div className="flex items-center gap-3 text-[11px]">
+                                        <div className="flex flex-col items-center px-3 py-1.5 bg-[var(--bg-inset)] rounded-[var(--radius-md)]">
+                                            <span className="font-bold text-[var(--text-primary)]">{totalComp}</span>
+                                            <span className="text-[9px] text-[var(--text-tertiary)] font-semibold uppercase">Comp.</span>
+                                        </div>
+                                        <div className="flex flex-col items-center px-3 py-1.5 bg-[var(--bg-inset)] rounded-[var(--radius-md)]">
+                                            <span className="font-bold text-[var(--text-primary)]">{totalSC}</span>
+                                            <span className="text-[9px] text-[var(--text-tertiary)] font-semibold uppercase">S/C</span>
+                                        </div>
+                                        <div className="flex flex-col items-center px-3 py-1.5 bg-[var(--bg-inset)] rounded-[var(--radius-md)]">
+                                            <span className="font-bold text-[var(--text-primary)]">{totalAct}</span>
+                                            <span className="text-[9px] text-[var(--text-tertiary)] font-semibold uppercase">Activ.</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Quick actions */}
+                                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <Link
+                                            href={`/projects/${project.code}`}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold text-[var(--accent)] hover:bg-[var(--accent-subtle)] border border-[var(--accent-subtle)] hover:border-[var(--accent)] transition-all"
+                                        >
+                                            <Edit2 size={12} /> Configurer
+                                        </Link>
+                                        <Link
+                                            href={`/projects/${project.code}/team`}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-default)] transition-all"
+                                        >
+                                            <Users size={12} /> Équipe
+                                        </Link>
                                     </div>
                                 </div>
-
-                                {/* Progress */}
-                                <div className="w-40 flex flex-col gap-1.5">
-                                    <div className="flex justify-between text-[11px]">
-                                        <span className="text-[var(--text-tertiary)] font-medium">Avancement</span>
-                                        <span className="text-[var(--text-primary)] font-bold">{project.progress}%</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-[var(--bg-inset)] rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full rounded-full ${getBarColor(project.progress)}`}
-                                            style={{ width: `${project.progress}%` }}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Alerts */}
-                                {getUnresolvedCountForProject(project.id) > 0 && (
-                                    <span className="flex items-center gap-1 text-[12px] font-semibold text-red-500">
-                                        <AlertCircle size={14} /> {getUnresolvedCountForProject(project.id)}
-                                    </span>
-                                )}
-
-                                {/* Arrow */}
-                                <ChevronRight size={16} className="text-[var(--text-tertiary)] group-hover:text-[var(--accent)] group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                             </div>
                         </div>
-                    </Link>
-                ))}
+                    );
+                })}
+
+                {projects.length === 0 && (
+                    <div className="text-center py-16 text-[var(--text-tertiary)]">
+                        <Settings size={48} className="mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">Aucun projet configuré</p>
+                        <Link href="/projects/new" className="text-[var(--accent)] text-sm font-semibold hover:underline mt-2 inline-block">
+                            Créer votre premier projet
+                        </Link>
+                    </div>
+                )}
             </div>
         </div>
     );

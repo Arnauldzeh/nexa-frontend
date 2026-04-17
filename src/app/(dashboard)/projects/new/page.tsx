@@ -2,10 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { Check, ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle2, ChevronUp, ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
-import { addProject, generateProjectCode, type ComponentData, type SousComposantData } from "@/lib/projectStore";
+import { addProject, generateProjectCode, ACTIVITY_TYPES, getActivityName, getActivityType, type ComponentData, type SousComposantData, type ActivityDef } from "@/lib/projectStore";
 import { toast } from "@/lib/toastStore";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+
+type ConfirmState = {
+  type: "component" | "subcomponent" | "activity" | "bailleur" | "partie_publique" | "partie_privee";
+  title: string;
+  message: string;
+  onConfirm: () => void;
+} | null;
 
 // ══════════════════════════════════════
 // CAMEROON ADMINISTRATIVE DATA
@@ -380,8 +388,10 @@ function LocalisationStep({ region, setRegion, departement, setDepartement, vill
 const steps = [
     { id: 1, name: "Informations" },
     { id: 2, name: "Localisation" },
-    { id: 3, name: "Structure" },
-    { id: 4, name: "Résumé" },
+    { id: 3, name: "Financement" },
+    { id: 4, name: "Structure" },
+    { id: 5, name: "Arborescence" },
+    { id: 6, name: "Résumé" },
 ];
 
 // ══════════════════════════════════════
@@ -396,12 +406,8 @@ export default function NewProjectPage() {
     // Step 1 state
     const [titre, setTitre] = useState("");
     const [description, setDescription] = useState("");
-    const [budget, setBudget] = useState("");
-    const [capacite, setCapacite] = useState("");
     const [dateDebut, setDateDebut] = useState("");
     const [dateFin, setDateFin] = useState("");
-    const [financement, setFinancement] = useState<string[]>([]);
-    const [bailleur, setBailleur] = useState("Banque Mondiale");
 
     // Step 2 state (lifted from LocalisationStep)
     const [region, setRegion] = useState("");
@@ -412,16 +418,39 @@ export default function NewProjectPage() {
     const [lng, setLng] = useState("");
     const [autoDetected, setAutoDetected] = useState(false);
 
-    // Step 3 state (structure)
+    // Step 3 state (financement)
+    const [budget, setBudget] = useState("");
+    const [devise, setDevise] = useState("FCFA");
+    const [structureJuridique, setStructureJuridique] = useState<"MOP" | "PPP">("MOP");
+    
+    // MOP
+    const [budgetNational, setBudgetNational] = useState(false);
+    const [budgetNationalPct, setBudgetNationalPct] = useState("0");
+    const [bailleurs, setBailleurs] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
+    
+    // PPP
+    const [partiesPubliques, setPartiesPubliques] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
+    const [partiesPrivees, setPartiesPrivees] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
+
+    const [confirmState, setConfirmState] = useState<ConfirmState>(null);
+
+    // Step 4 state (structure)
     const [components, setComponents] = useState<ComponentData[]>([
-        { id: "c1", name: "Barrage", sousComposants: [{ id: "sc1", name: "Fondations", activities: ["Fouilles", "Béton de propreté"] }] },
+        { id: "c1", name: "Barrage", sousComposants: [{ id: "sc1", name: "Fondations", activities: [{ name: "Fouilles", typeActivite: "travaux" }, { name: "Béton de propreté", typeActivite: "travaux" }] }] },
     ]);
 
     const addComponent = () => {
         setComponents(prev => [...prev, { id: `c${Date.now()}`, name: "", sousComposants: [] }]);
     };
     const removeComponent = (idx: number) => {
-        setComponents(prev => prev.filter((_, i) => i !== idx));
+        setConfirmState({
+            type: "component",
+            title: "Supprimer le composant",
+            message: "Êtes-vous sûr de vouloir supprimer ce composant ? Cette action est irréversible.",
+            onConfirm: () => {
+                setComponents(prev => prev.filter((_, i) => i !== idx));
+            }
+        });
     };
     const updateComponentName = (idx: number, name: string) => {
         setComponents(prev => prev.map((c, i) => i === idx ? { ...c, name } : c));
@@ -430,51 +459,322 @@ export default function NewProjectPage() {
         setComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] } : c));
     };
     const removeSousComposant = (compIdx: number, scIdx: number) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.filter((_, si) => si !== scIdx) } : c));
+        setConfirmState({
+            type: "subcomponent",
+            title: "Supprimer le sous-composant",
+            message: "Êtes-vous sûr de vouloir supprimer ce sous-composant ? Cette action est irréversible.",
+            onConfirm: () => {
+                setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.filter((_, si) => si !== scIdx) } : c));
+            }
+        });
     };
     const updateSCName = (compIdx: number, scIdx: number, name: string) => {
         setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, name } : sc) } : c));
     };
-    const addActivity = (compIdx: number, scIdx: number) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: [...sc.activities, ""] } : sc) } : c));
+    const addActivity = (compIdx: number, scIdx: number, typeActivite: string = "travaux") => {
+        const newAct: ActivityDef = { name: "", typeActivite };
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: [...sc.activities, newAct] } : sc) } : c));
     };
     const updateActivity = (compIdx: number, scIdx: number, actIdx: number, val: string) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? val : a) } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: val, typeActivite: "travaux" } : { ...a, name: val }) : a) } : sc) } : c));
+    };
+    const updateActivityType = (compIdx: number, scIdx: number, actIdx: number, typeActivite: string) => {
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: a, typeActivite } : { ...a, typeActivite }) : a) } : sc) } : c));
     };
     const removeActivity = (compIdx: number, scIdx: number, actIdx: number) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.filter((_, ai) => ai !== actIdx) } : sc) } : c));
+        setConfirmState({
+            type: "activity",
+            title: "Supprimer l'activité",
+            message: "Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible.",
+            onConfirm: () => {
+                setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.filter((_, ai) => ai !== actIdx) } : sc) } : c));
+            }
+        });
     };
 
-    const toggleFinancement = (label: string) => {
-        setFinancement(prev => prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]);
+    // Budget par composant
+    const updateComponentBudget = (idx: number, budget: string) => {
+        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget } : c));
+    };
+
+    // ═══ Réordonnancement (même niveau) ═══
+    const moveComponentUp = (idx: number) => {
+        if (idx <= 0) return;
+        setComponents(prev => { const a = [...prev]; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; return a; });
+    };
+    const moveComponentDown = (idx: number) => {
+        setComponents(prev => { if (idx >= prev.length - 1) return prev; const a = [...prev]; [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]; return a; });
+    };
+    const moveSCUp = (ci: number, si: number) => {
+        if (si <= 0) return;
+        setComponents(prev => prev.map((c, i) => { if (i !== ci) return c; const a = [...c.sousComposants]; [a[si - 1], a[si]] = [a[si], a[si - 1]]; return { ...c, sousComposants: a }; }));
+    };
+    const moveSCDown = (ci: number, si: number) => {
+        setComponents(prev => prev.map((c, i) => { if (i !== ci) return c; if (si >= c.sousComposants.length - 1) return c; const a = [...c.sousComposants]; [a[si], a[si + 1]] = [a[si + 1], a[si]]; return { ...c, sousComposants: a }; }));
+    };
+    const moveActivityUp = (ci: number, si: number, ai: number) => {
+        if (ai <= 0) return;
+        setComponents(prev => prev.map((c, i) => i === ci ? { ...c, sousComposants: c.sousComposants.map((sc, j) => { if (j !== si) return sc; const a = [...sc.activities]; [a[ai - 1], a[ai]] = [a[ai], a[ai - 1]]; return { ...sc, activities: a }; }) } : c));
+    };
+    const moveActivityDown = (ci: number, si: number, ai: number) => {
+        setComponents(prev => prev.map((c, i) => i === ci ? { ...c, sousComposants: c.sousComposants.map((sc, j) => { if (j !== si) return sc; if (ai >= sc.activities.length - 1) return sc; const a = [...sc.activities]; [a[ai], a[ai + 1]] = [a[ai + 1], a[ai]]; return { ...sc, activities: a }; }) } : c));
+    };
+
+    // ═══ Promotion hiérarchique (monter d'un cran) ═══
+
+    // Activité → Sous-composant (dans le même composant)
+    const promoteActivity = (ci: number, si: number, ai: number) => {
+        setComponents(prev => prev.map((c, i) => {
+            if (i !== ci) return c;
+            const actName = getActivityName(c.sousComposants[si].activities[ai]);
+            const newSC: SousComposantData = { id: `sc${Date.now()}`, name: actName, activities: [] };
+            const updatedSC = c.sousComposants.map((sc, j) => j === si ? { ...sc, activities: sc.activities.filter((_, k) => k !== ai) } : sc);
+            // Insérer la nouvelle SC juste après la SC actuelle
+            updatedSC.splice(si + 1, 0, newSC);
+            return { ...c, sousComposants: updatedSC };
+        }));
+    };
+
+    // Sous-composant → Composant
+    const promoteSC = (ci: number, si: number) => {
+        setComponents(prev => {
+            const comp = prev[ci];
+            const sc = comp.sousComposants[si];
+            const newComp: ComponentData = { id: `c${Date.now()}`, name: sc.name, sousComposants: [], budget: "" };
+            // Si la SC a des activités, on les met comme SCs enfants du nouveau composant
+            if (sc.activities.length > 0) {
+                newComp.sousComposants = sc.activities.map((a, idx) => ({ id: `sc${Date.now() + idx + 1}`, name: getActivityName(a), activities: [] }));
+            }
+            // Retirer la SC du composant parent
+            const updatedComp = { ...comp, sousComposants: comp.sousComposants.filter((_, j) => j !== si) };
+            const result = [...prev];
+            result[ci] = updatedComp;
+            // Insérer le nouveau composant juste après
+            result.splice(ci + 1, 0, newComp);
+            return result;
+        });
+    };
+
+    // ═══ Rétrogradation hiérarchique (descendre d'un cran) ═══
+
+    // Composant → Sous-composant (du composant précédent)
+    const demoteComponent = (ci: number) => {
+        if (ci <= 0) return; // Pas de composant avant pour l'accueillir
+        setComponents(prev => {
+            const comp = prev[ci];
+            const newSC: SousComposantData = { id: `sc${Date.now()}`, name: comp.name, activities: comp.sousComposants.flatMap(sc => sc.activities.length > 0 ? sc.activities : [{ name: sc.name, typeActivite: "travaux" } as const]) };
+            const result = prev.filter((_, i) => i !== ci);
+            result[ci - 1] = { ...result[ci - 1], sousComposants: [...result[ci - 1].sousComposants, newSC] };
+            return result;
+        });
+    };
+
+    // Sous-composant → Activité (de la sous-composant précédente)
+    const demoteSC = (ci: number, si: number) => {
+        if (si <= 0) return; // Pas de SC avant pour l'accueillir
+        setComponents(prev => prev.map((c, i) => {
+            if (i !== ci) return c;
+            const sc = c.sousComposants[si];
+            const updatedSCs = c.sousComposants.filter((_, j) => j !== si);
+            // Ajouter le nom de la SC comme activité à la SC précédente, + ses activités
+            const prevSCIdx = si - 1;
+            updatedSCs[prevSCIdx] = {
+                ...updatedSCs[prevSCIdx],
+                activities: [...updatedSCs[prevSCIdx].activities, { name: sc.name, typeActivite: "travaux" }, ...sc.activities],
+            };
+            return { ...c, sousComposants: updatedSCs };
+        }));
+    };
+
+    // Searchable bailleur dropdown
+    const [bailleurDropdownOpen, setBailleurDropdownOpen] = useState(false);
+    const [bailleurSearch, setBailleurSearch] = useState("");
+    const [customBailleurInput, setCustomBailleurInput] = useState("");
+    const [showCustomBailleurInput, setShowCustomBailleurInput] = useState(false);
+
+    const BAILLEURS_LIST = [
+        "Banque Mondiale",
+        "BAD (Banque Africaine de Développement)",
+        "BDEAC",
+        "AFD (Agence Française de Développement)",
+        "Eximbank China",
+        "KfW",
+        "BEI (Banque Européenne d'Investissement)",
+        "Banque Islamique de Développement",
+        "JICA (Japan International Cooperation Agency)",
+        "FMI",
+        "BADEA",
+        "Fonds Koweïtien",
+        "Fonds Saoudien",
+        "Fonds OPEP",
+        "BID (Banque Interaméricaine de Développement)",
+    ];
+
+    const availableBailleurs = BAILLEURS_LIST.filter(
+        (b) => !bailleurs.some((existing) => existing.nom === b) && b.toLowerCase().includes(bailleurSearch.toLowerCase())
+    );
+
+    const handleSelectBailleur = (nom: string) => {
+        const id = `b${Date.now()}`;
+        setBailleurs((prev) => [...prev, { id, nom, pourcentage: "0" }]);
+        setBailleurSearch("");
+        setBailleurDropdownOpen(false);
+    };
+
+    const handleAddCustomBailleur = () => {
+        if (!customBailleurInput.trim()) return;
+        const id = `b${Date.now()}`;
+        setBailleurs((prev) => [...prev, { id, nom: customBailleurInput.trim(), pourcentage: "0" }]);
+        setCustomBailleurInput("");
+        setShowCustomBailleurInput(false);
+    };
+
+    // Helpers pour MOP
+    const updateBailleurPct = (id: string, pct: string) => {
+        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, pourcentage: pct } : b));
+    };
+
+    const removeBailleur = (id: string) => {
+        setConfirmState({
+            type: "bailleur",
+            title: "Supprimer le bailleur",
+            message: "Êtes-vous sûr de vouloir supprimer ce bailleur ? Cette action est irréversible.",
+            onConfirm: () => {
+                setBailleurs(prev => prev.filter(b => b.id !== id));
+            }
+        });
+    };
+
+    // Helpers pour PPP
+    const addPartiePublique = () => {
+        const id = `pub${Date.now()}`;
+        setPartiesPubliques(prev => [...prev, { id, nom: "", pourcentage: "0" }]);
+    };
+
+    const updatePartiePublique = (id: string, nom: string, pourcentage: string) => {
+        setPartiesPubliques(prev => prev.map(p => p.id === id ? { ...p, nom, pourcentage } : p));
+    };
+
+    const removePartiePublique = (id: string) => {
+        setConfirmState({
+            type: "partie_publique",
+            title: "Supprimer la partie publique",
+            message: "Êtes-vous sûr de vouloir supprimer cette partie publique ? Cette action est irréversible.",
+            onConfirm: () => {
+                setPartiesPubliques(prev => prev.filter(p => p.id !== id));
+            }
+        });
+    };
+
+    const addPartiePrivee = () => {
+        const id = `priv${Date.now()}`;
+        setPartiesPrivees(prev => [...prev, { id, nom: "", pourcentage: "0" }]);
+    };
+
+    const updatePartiePrivee = (id: string, nom: string, pourcentage: string) => {
+        setPartiesPrivees(prev => prev.map(p => p.id === id ? { ...p, nom, pourcentage } : p));
+    };
+
+    const removePartiePrivee = (id: string) => {
+        setConfirmState({
+            type: "partie_privee",
+            title: "Supprimer la partie privée",
+            message: "Êtes-vous sûr de vouloir supprimer cette partie privée ? Cette action est irréversible.",
+            onConfirm: () => {
+                setPartiesPrivees(prev => prev.filter(p => p.id !== id));
+            }
+        });
+    };
+
+    // Calcul des totaux
+    const getTotalMOP = () => {
+        const bn = budgetNational ? parseFloat(budgetNationalPct) || 0 : 0;
+        const bailleursTotal = bailleurs.reduce((sum, b) => sum + (parseFloat(b.pourcentage) || 0), 0);
+        return bn + bailleursTotal;
+    };
+
+    const getTotalPPP = () => {
+        const pubTotal = partiesPubliques.reduce((sum, p) => sum + (parseFloat(p.pourcentage) || 0), 0);
+        const privTotal = partiesPrivees.reduce((sum, p) => sum + (parseFloat(p.pourcentage) || 0), 0);
+        return { public: pubTotal, prive: privTotal, total: pubTotal + privTotal };
     };
 
     const totalActivities = components.reduce((sum, c) => sum + c.sousComposants.reduce((s, sc) => s + sc.activities.length, 0), 0);
     const totalSC = components.reduce((sum, c) => sum + c.sousComposants.length, 0);
 
-    const formatBudget = (val: string) => {
-        const num = parseFloat(val);
-        if (isNaN(num)) return val + " FCFA";
-        if (num >= 1e9) return (num / 1e9).toFixed(0) + " Mrd FCFA";
-        if (num >= 1e6) return (num / 1e6).toFixed(0) + " M FCFA";
-        return num.toLocaleString() + " FCFA";
-    };
+    const handleCreate = async () => {
+        try {
+            // Préparer les bailleurs au bon format
+            const bailleursFormatted = bailleurs.map(b => ({
+                nom: b.nom,
+                pourcentage: parseFloat(b.pourcentage) || 0
+            }));
 
-    const handleCreate = () => {
-        addProject({
-            id: projectCode, name: titre || "Nouveau Projet", code: projectCode,
-            description: description || "Projet d'infrastructure",
-            region, departement, ville, budget: formatBudget(budget),
-            capacite: capacite ? capacite + " MW" : "", dateDebut, dateFin,
-            financement, bailleur, progress: 0, alerts: 0,
-            components, createdAt: new Date().toISOString().split("T")[0],
-        });
-        toast.success("Projet créé avec succès. Redirection...");
-        setTimeout(() => router.push(`/projects/${projectCode}`), 1500);
+            // Préparer les parties publiques
+            const partiesPubliquesFormatted = partiesPubliques.map(p => ({
+                nom: p.nom,
+                pourcentage: parseFloat(p.pourcentage) || 0
+            }));
+
+            // Préparer les parties privées
+            const partiesPriveesFormatted = partiesPrivees.map(p => ({
+                nom: p.nom,
+                pourcentage: parseFloat(p.pourcentage) || 0
+            }));
+
+            // Construire l'objet projet au format attendu par le backend
+            const projectData = {
+                name: titre || "Nouveau Projet",
+                description: description || "Projet d'infrastructure",
+                budget: budget ? parseFloat(budget) : undefined,
+                devise: devise || "FCFA",
+                progress: 0,
+                localisation: {
+                    region: region || undefined,
+                    departement: departement || undefined,
+                    ville: ville || undefined,
+                    localite: localite || undefined,
+                    coordinates: (lat && lng) ? {
+                        lat: parseFloat(lat),
+                        lng: parseFloat(lng)
+                    } : undefined
+                },
+                financement: {
+                    type: structureJuridique as 'MOP' | 'PPP',
+                    budgetNational: budgetNational,
+                    budgetNationalPct: budgetNational ? parseFloat(budgetNationalPct) : undefined,
+                    bailleurs: bailleursFormatted.length > 0 ? bailleursFormatted : undefined,
+                    partiesPubliques: partiesPubliquesFormatted.length > 0 ? partiesPubliquesFormatted : undefined,
+                    partiesPrivees: partiesPriveesFormatted.length > 0 ? partiesPriveesFormatted : undefined
+                },
+                dateDebut: dateDebut || undefined,
+                dateFin: dateFin || undefined,
+                components: components.map(comp => ({
+                    id: comp.id,
+                    name: comp.name,
+                    budget: comp.budget ? parseFloat(comp.budget.toString()) : undefined,
+                    sousComposants: comp.sousComposants.map(sc => ({
+                        id: sc.id,
+                        name: sc.name,
+                        activities: sc.activities.map(act => ({
+                            name: act.name,
+                            typeActivite: act.typeActivite
+                        }))
+                    }))
+                }))
+            };
+
+            const createdProject = await addProject(projectData);
+            toast.success("Projet créé avec succès. Redirection...");
+            setTimeout(() => router.push(`/projects/${createdProject.code}`), 1500);
+        } catch (error: any) {
+            console.error('Erreur création projet:', error);
+            toast.error(error.message || "Erreur lors de la création du projet");
+        }
     };
 
     const handleNext = () => {
-        if (currentStep < 4) setCurrentStep(currentStep + 1);
+        if (currentStep < 6) setCurrentStep(currentStep + 1);
         else handleCreate();
     };
     const handlePrev = () => {
@@ -560,14 +860,6 @@ export default function NewProjectPage() {
                             <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Décrivez le projet..." className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all resize-none" />
                         </div>
                         <div>
-                            <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Budget (FCFA) <span className="text-red-500">*</span></label>
-                            <input type="number" value={budget} onChange={e => setBudget(e.target.value)} placeholder="ex: 420000000000" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" />
-                        </div>
-                        <div>
-                            <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Capacité (MW)</label>
-                            <input type="number" value={capacite} onChange={e => setCapacite(e.target.value)} placeholder="ex: 30" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" />
-                        </div>
-                        <div>
                             <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Date début <span className="text-red-500">*</span></label>
                             <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" />
                         </div>
@@ -575,79 +867,539 @@ export default function NewProjectPage() {
                             <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Date fin prévue <span className="text-red-500">*</span></label>
                             <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" />
                         </div>
-                        <div className="col-span-2">
-                            <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-2 uppercase tracking-wider">Source de financement</label>
-                            <div className="flex gap-6">
-                                {["Budget National", "Bailleur", "PPP"].map((label) => (
-                                    <label key={label} className="flex items-center gap-2 text-[13px] text-[var(--text-primary)] cursor-pointer hover:text-[var(--accent)] transition-colors font-medium">
-                                        <input type="checkbox" checked={financement.includes(label)} onChange={() => toggleFinancement(label)} className="w-4 h-4 rounded-[var(--radius-sm)] border-[var(--border-default)] bg-[var(--bg-inset)] accent-[var(--accent)]" />
-                                        {label}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="col-span-2">
-                            <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Bailleur</label>
-                            <select value={bailleur} onChange={e => setBailleur(e.target.value)} className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all cursor-pointer">
-                                <option>Banque Mondiale</option><option>BAD</option><option>BDEAC</option><option>Eximbank China</option><option>AFD</option>
-                            </select>
-                        </div>
                     </div>
                 )}
 
                 {/* Step 2: Localisation */}
                 {currentStep === 2 && <LocalisationStep region={region} setRegion={setRegion} departement={departement} setDepartement={setDepartement} ville={ville} setVille={setVille} localite={localite} setLocalite={setLocalite} lat={lat} setLat={setLat} lng={lng} setLng={setLng} autoDetected={autoDetected} setAutoDetected={setAutoDetected} />}
 
-                {/* Step 3: Structure */}
+                {/* Step 3: Financement */}
                 {currentStep === 3 && (
                     <div className="space-y-6">
+                        {/* Info */}
                         <div className="flex gap-3 p-3 rounded-[var(--radius-md)] bg-blue-500/10 border border-blue-500/20">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 flex-shrink-0 mt-0.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                            <div className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
-                                <p>Définissez l&apos;arborescence physique du projet. <strong>{components.length}</strong> composant{components.length > 1 ? "s" : ""}, <strong>{totalSC}</strong> sous-composant{totalSC > 1 ? "s" : ""}, <strong>{totalActivities}</strong> activité{totalActivities > 1 ? "s" : ""}.</p>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
+                            <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                                Définissez le cadre juridique et les sources de financement du projet. Le budget peut être renseigné ultérieurement.
+                            </p>
+                        </div>
+
+                        {/* Budget (optionnel) */}
+                        <div>
+                            <h3 className="text-[13px] font-bold text-[var(--text-primary)] mb-3 uppercase tracking-wider">Budget</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="col-span-2">
+                                    <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Montant</label>
+                                    <input 
+                                        type="number" 
+                                        value={budget} 
+                                        onChange={e => setBudget(e.target.value)} 
+                                        placeholder="ex: 420000000000" 
+                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" 
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Devise</label>
+                                    <select 
+                                        value={devise} 
+                                        onChange={e => setDevise(e.target.value)} 
+                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all cursor-pointer"
+                                    >
+                                        <option value="FCFA">FCFA</option>
+                                        <option value="EUR">EUR (€)</option>
+                                        <option value="USD">USD ($)</option>
+                                        <option value="XAF">XAF</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
-                        <div className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] p-4 space-y-3">
-                            {components.map((comp, ci) => (
-                                <div key={comp.id} className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] p-3">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <div className="w-5 h-5 bg-blue-500/10 text-blue-500 rounded flex items-center justify-center font-bold text-[10px]">C</div>
-                                        <input type="text" value={comp.name} onChange={e => updateComponentName(ci, e.target.value)} placeholder="Nom du composant..." className="flex-1 bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[13px] font-bold text-[var(--text-primary)] px-1 py-0.5 transition-colors" />
-                                        <button onClick={() => removeComponent(ci)} className="text-[var(--text-tertiary)] hover:text-red-500"><Trash2 size={14} /></button>
+
+                        {/* Structuration Juridique */}
+                        <div>
+                            <h3 className="text-[13px] font-bold text-[var(--text-primary)] mb-3 uppercase tracking-wider">Structuration Juridique <span className="text-red-500">*</span></h3>
+                            <div className="flex gap-4">
+                                <label className="flex-1 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="structure" 
+                                        value="MOP" 
+                                        checked={structureJuridique === "MOP"} 
+                                        onChange={() => setStructureJuridique("MOP")} 
+                                        className="peer sr-only" 
+                                    />
+                                    <div className="p-4 border-2 rounded-[var(--radius-md)] transition-all peer-checked:border-[var(--accent)] peer-checked:bg-[var(--accent-subtle)] border-[var(--border-default)] hover:border-[var(--accent)]/50">
+                                        <div className="text-[14px] font-bold text-[var(--text-primary)] mb-1">MOP</div>
+                                        <div className="text-[11px] text-[var(--text-tertiary)]">Maîtrise d&apos;Ouvrage Publique</div>
                                     </div>
-                                    <div className="ml-7 pl-3 border-l-2 border-[var(--border-subtle)] space-y-2">
-                                        {comp.sousComposants.map((sc, si) => (
-                                            <div key={sc.id}>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <div className="w-4 h-4 bg-amber-500/10 text-amber-500 rounded flex items-center justify-center font-bold text-[9px]">SC</div>
-                                                    <input type="text" value={sc.name} onChange={e => updateSCName(ci, si, e.target.value)} placeholder="Sous-composant..." className="flex-1 bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[12px] font-semibold text-[var(--text-secondary)] px-1 py-0.5 transition-colors" />
-                                                    <button onClick={() => removeSousComposant(ci, si)} className="text-[var(--text-tertiary)] hover:text-red-500"><Trash2 size={12} /></button>
+                                </label>
+                                <label className="flex-1 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="structure" 
+                                        value="PPP" 
+                                        checked={structureJuridique === "PPP"} 
+                                        onChange={() => setStructureJuridique("PPP")} 
+                                        className="peer sr-only" 
+                                    />
+                                    <div className="p-4 border-2 rounded-[var(--radius-md)] transition-all peer-checked:border-[var(--accent)] peer-checked:bg-[var(--accent-subtle)] border-[var(--border-default)] hover:border-[var(--accent)]/50">
+                                        <div className="text-[14px] font-bold text-[var(--text-primary)] mb-1">PPP</div>
+                                        <div className="text-[11px] text-[var(--text-tertiary)]">Partenariat Public-Privé</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* ═══ Financement selon le mode ═══ */}
+                        <div>
+                            <h3 className="text-[13px] font-bold text-[var(--text-primary)] mb-3 uppercase tracking-wider">Financement</h3>
+                            
+                            {structureJuridique === "MOP" ? (
+                                <div className="space-y-5">
+                                    {/* ── Budget National ── */}
+                                    <div className="p-4 rounded-[var(--radius-md)] border border-[var(--border-default)] bg-[var(--bg-surface)] space-y-3">
+                                        <label className="flex items-center gap-3 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={budgetNational} 
+                                                onChange={e => setBudgetNational(e.target.checked)} 
+                                                className="w-4 h-4 rounded-[var(--radius-sm)] border-[var(--border-default)] bg-[var(--bg-inset)] accent-[var(--accent)]" 
+                                            />
+                                            <div>
+                                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">Budget National</div>
+                                                <div className="text-[11px] text-[var(--text-tertiary)]">Financement par l&apos;État du Cameroun</div>
+                                            </div>
+                                        </label>
+                                        {budgetNational && (
+                                            <div className="ml-7 flex items-center gap-3">
+                                                <label className="text-[12px] font-medium text-[var(--text-secondary)] whitespace-nowrap">Pourcentage :</label>
+                                                <div className="relative w-28">
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max="100" 
+                                                        value={budgetNationalPct} 
+                                                        onChange={e => setBudgetNationalPct(e.target.value)} 
+                                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all pr-8" 
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-[var(--text-tertiary)] font-semibold">%</span>
                                                 </div>
-                                                <div className="ml-5 pl-3 border-l border-[var(--border-subtle)] space-y-1">
-                                                    {sc.activities.map((act, ai) => (
-                                                        <div key={ai} className="flex items-center gap-2">
-                                                            <div className="w-3 h-3 bg-purple-500/10 rounded-full flex-shrink-0" />
-                                                            <input type="text" value={act} onChange={e => updateActivity(ci, si, ai, e.target.value)} placeholder="Activité..." className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] outline-none text-[11px] text-[var(--text-secondary)] px-2 py-1 focus:border-[var(--accent)] transition-colors" />
-                                                            <button onClick={() => removeActivity(ci, si, ai)} className="text-[var(--text-tertiary)] hover:text-red-500"><Trash2 size={10} /></button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* ── Bailleurs de fonds (Searchable dropdown) ── */}
+                                    <div className="space-y-3">
+                                        <label className="block text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Bailleurs de fonds</label>
+                                        
+                                        {/* Dropdown sélecteur */}
+                                        <div className="relative">
+                                            <div 
+                                                className="flex items-center bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] overflow-hidden cursor-pointer hover:border-[var(--accent)]/50 transition-colors"
+                                            >
+                                                <input
+                                                    type="text"
+                                                    value={bailleurSearch}
+                                                    onChange={(e) => { setBailleurSearch(e.target.value); setBailleurDropdownOpen(true); }}
+                                                    onFocus={() => setBailleurDropdownOpen(true)}
+                                                    placeholder="Rechercher et sélectionner un bailleur..."
+                                                    className="flex-1 bg-transparent px-4 py-2.5 text-[13px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none"
+                                                />
+                                                <svg className="mr-3 text-[var(--text-tertiary)] pointer-events-none flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                                            </div>
+
+                                            {bailleurDropdownOpen && (
+                                                <>
+                                                    <div className="fixed inset-0 z-40" onClick={() => { setBailleurDropdownOpen(false); setBailleurSearch(""); }} />
+                                                    <div className="absolute z-50 w-full mt-1 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] shadow-[var(--shadow-lg)] max-h-52 overflow-y-auto">
+                                                        {availableBailleurs.length > 0 ? (
+                                                            availableBailleurs.map((b) => (
+                                                                <button
+                                                                    key={b}
+                                                                    type="button"
+                                                                    onClick={() => handleSelectBailleur(b)}
+                                                                    className="w-full text-left px-4 py-2.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] transition-colors"
+                                                                >
+                                                                    {b}
+                                                                </button>
+                                                            ))
+                                                        ) : (
+                                                            <div className="px-4 py-3 text-[12px] text-[var(--text-tertiary)] italic">Aucun bailleur trouvé</div>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Bouton ajouter un bailleur personnalisé */}
+                                        {!showCustomBailleurInput ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowCustomBailleurInput(true)}
+                                                className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--accent)] hover:underline"
+                                            >
+                                                <Plus size={12} /> Ajouter un bailleur personnalisé
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={customBailleurInput}
+                                                    onChange={(e) => setCustomBailleurInput(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddCustomBailleur())}
+                                                    placeholder="Nom du bailleur..."
+                                                    autoFocus
+                                                    className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all"
+                                                />
+                                                <button type="button" onClick={handleAddCustomBailleur} className="px-3 py-2 bg-[var(--accent)] text-white rounded-[var(--radius-md)] text-[12px] font-semibold hover:opacity-90 transition-opacity">Ajouter</button>
+                                                <button type="button" onClick={() => { setShowCustomBailleurInput(false); setCustomBailleurInput(""); }} className="px-3 py-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] text-[12px] font-semibold transition-colors">Annuler</button>
+                                            </div>
+                                        )}
+
+                                        {/* Liste des bailleurs sélectionnés avec pourcentage */}
+                                        {bailleurs.length > 0 && (
+                                            <div className="space-y-2 mt-2">
+                                                {bailleurs.map((b) => (
+                                                    <div key={b.id} className="flex items-center gap-3 p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] group">
+                                                        <div className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0" />
+                                                        <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)] truncate">{b.nom}</span>
+                                                        <div className="relative w-24 flex-shrink-0">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                value={b.pourcentage}
+                                                                onChange={(e) => updateBailleurPct(b.id, e.target.value)}
+                                                                className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                            />
+                                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                        </div>
+                                                        <button type="button" onClick={() => removeBailleur(b.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* ── Total MOP ── */}
+                                    {(budgetNational || bailleurs.length > 0) && (() => {
+                                        const total = getTotalMOP();
+                                        const isValid = total === 100;
+                                        const isOver = total > 100;
+                                        return (
+                                            <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
+                                                isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
+                                            }`}>
+                                                <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total financement</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
+                                                        {total}%
+                                                    </span>
+                                                    {isValid && <CheckCircle2 size={14} className="text-green-500" />}
+                                                    {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
+                                                    {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            ) : (
+                                /* ═══ PPP — Deux colonnes : Public / Privé ═══ */
+                                <div className="space-y-5">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        {/* ── Colonne gauche : Parties Publiques ── */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[12px] font-bold text-blue-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <div className="w-2 h-2 rounded-full bg-blue-500" /> Parties Publiques
+                                                </h4>
+                                                <button type="button" onClick={addPartiePublique} className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline">
+                                                    <Plus size={12} /> Ajouter
+                                                </button>
+                                            </div>
+
+                                            {partiesPubliques.length === 0 ? (
+                                                <div className="p-6 border-2 border-dashed border-[var(--border-default)] rounded-[var(--radius-md)] text-center">
+                                                    <div className="text-[var(--text-tertiary)] mb-2"><Plus size={20} className="mx-auto opacity-40" /></div>
+                                                    <p className="text-[11px] text-[var(--text-tertiary)] mb-2">Aucune partie publique</p>
+                                                    <button type="button" onClick={addPartiePublique} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">Ajouter une entité publique</button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {partiesPubliques.map((p) => (
+                                                        <div key={p.id} className="p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] space-y-2 group">
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={p.nom}
+                                                                    onChange={(e) => updatePartiePublique(p.id, e.target.value, p.pourcentage)}
+                                                                    placeholder="Nom de l'entité publique..."
+                                                                    className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                />
+                                                                <button type="button" onClick={() => removePartiePublique(p.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={13} /></button>
+                                                            </div>
+                                                            <div className="relative w-full">
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="100"
+                                                                    value={p.pourcentage}
+                                                                    onChange={(e) => updatePartiePublique(p.id, p.nom, e.target.value)}
+                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                />
+                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                            </div>
                                                         </div>
                                                     ))}
-                                                    <button onClick={() => addActivity(ci, si)} className="flex items-center gap-1 text-[10px] font-medium text-[var(--accent)] hover:underline mt-1 py-1"><Plus size={10} /> Ajouter une activité</button>
+                                                </div>
+                                            )}
+
+                                            {/* Sous-total public */}
+                                            {partiesPubliques.length > 0 && (
+                                                <div className="flex justify-between items-center px-3 py-2 bg-blue-500/5 rounded-[var(--radius-sm)] border border-blue-500/10">
+                                                    <span className="text-[11px] font-semibold text-blue-600">Sous-total Public</span>
+                                                    <span className="text-[13px] font-bold text-blue-600">{getTotalPPP().public}%</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* ── Colonne droite : Parties Privées ── */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[12px] font-bold text-purple-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <div className="w-2 h-2 rounded-full bg-purple-500" /> Parties Privées
+                                                </h4>
+                                                <button type="button" onClick={addPartiePrivee} className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline">
+                                                    <Plus size={12} /> Ajouter
+                                                </button>
+                                            </div>
+
+                                            {partiesPrivees.length === 0 ? (
+                                                <div className="p-6 border-2 border-dashed border-[var(--border-default)] rounded-[var(--radius-md)] text-center">
+                                                    <div className="text-[var(--text-tertiary)] mb-2"><Plus size={20} className="mx-auto opacity-40" /></div>
+                                                    <p className="text-[11px] text-[var(--text-tertiary)] mb-2">Aucune partie privée</p>
+                                                    <button type="button" onClick={addPartiePrivee} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">Ajouter une entité privée</button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {partiesPrivees.map((p) => (
+                                                        <div key={p.id} className="p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] space-y-2 group">
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={p.nom}
+                                                                    onChange={(e) => updatePartiePrivee(p.id, e.target.value, p.pourcentage)}
+                                                                    placeholder="Nom de l'entité privée..."
+                                                                    className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                />
+                                                                <button type="button" onClick={() => removePartiePrivee(p.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={13} /></button>
+                                                            </div>
+                                                            <div className="relative w-full">
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="100"
+                                                                    value={p.pourcentage}
+                                                                    onChange={(e) => updatePartiePrivee(p.id, p.nom, e.target.value)}
+                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                />
+                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Sous-total privé */}
+                                            {partiesPrivees.length > 0 && (
+                                                <div className="flex justify-between items-center px-3 py-2 bg-purple-500/5 rounded-[var(--radius-sm)] border border-purple-500/10">
+                                                    <span className="text-[11px] font-semibold text-purple-600">Sous-total Privé</span>
+                                                    <span className="text-[13px] font-bold text-purple-600">{getTotalPPP().prive}%</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* ── Total Général PPP ── */}
+                                    {(partiesPubliques.length > 0 || partiesPrivees.length > 0) && (() => {
+                                        const { total } = getTotalPPP();
+                                        const isValid = total === 100;
+                                        const isOver = total > 100;
+                                        return (
+                                            <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
+                                                isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
+                                            }`}>
+                                                <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total Répartition (Public + Privé)</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
+                                                        {total}%
+                                                    </span>
+                                                    {isValid && <CheckCircle2 size={14} className="text-green-500" />}
+                                                    {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
+                                                    {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 4: Structure */}
+                {currentStep === 4 && (
+                    <div className="space-y-5">
+                        {/* ── Header : Nom du projet ── */}
+                        <div className="flex items-center gap-3 p-4 rounded-[var(--radius-md)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20">
+                            <div className="w-8 h-8 rounded-[var(--radius-md)] bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--accent)]"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">Structure du projet</div>
+                                <div className="text-[15px] font-bold text-[var(--text-primary)]">{titre || "Nouveau Projet"}</div>
+                            </div>
+                        </div>
+
+                        {/* ── Info compteurs ── */}
+                        <div className="flex gap-3 p-3 rounded-[var(--radius-md)] bg-blue-500/10 border border-blue-500/20">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
+                            <div className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                                <p>Définissez l&apos;arborescence. <strong>{components.length}</strong> composant{components.length > 1 ? "s" : ""}, <strong>{totalSC}</strong> sous-composant{totalSC > 1 ? "s" : ""}, <strong>{totalActivities}</strong> activité{totalActivities > 1 ? "s" : ""}. Utilisez <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-green-500/10 rounded text-green-500 text-[10px] font-bold"><ChevronUp size={9} />Monter d&apos;un niveau</span> et <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-orange-500/10 rounded text-orange-500 text-[10px] font-bold"><ChevronDown size={9} />Descendre d&apos;un niveau</span> pour changer le niveau hiérarchique.</p>
+                            </div>
+                        </div>
+
+                        {/* ── Liste des composants ── */}
+                        <div className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] p-4 space-y-3">
+                            {components.map((comp, ci) => (
+                                <div key={comp.id} className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] p-4">
+                                    {/* ── Composant : Nom + Budget + Actions ── */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-7 h-7 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[10px] flex-shrink-0">C{ci + 1}</div>
+                                        <input type="text" value={comp.name} onChange={e => updateComponentName(ci, e.target.value)} placeholder="Nom du composant..." className="flex-1 min-w-0 bg-transparent border-b-2 border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[14px] font-bold text-[var(--text-primary)] px-1 py-1 transition-colors" />
+                                        {/* Budget inline */}
+                                        <div className="relative w-[150px] flex-shrink-0">
+                                            <input type="number" value={comp.budget || ""} onChange={e => updateComponentBudget(ci, e.target.value)} placeholder="Budget" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] pr-12 focus:outline-none focus:border-[var(--accent)] transition-colors" />
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-tertiary)] font-bold">{devise}</span>
+                                        </div>
+                                        {/* Actions à droite */}
+                                        <div className="flex items-center gap-1 flex-shrink-0 ml-1 border-l border-[var(--border-subtle)] pl-2">
+                                            <button type="button" onClick={() => demoteComponent(ci)} disabled={ci === 0} className="p-1.5 rounded-[var(--radius-sm)] hover:bg-orange-500/10 text-orange-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all" title="Transformer en Sous-composant"><ChevronDown size={16} /></button>
+                                            <button type="button" onClick={() => removeComponent(ci)} className="p-1.5 rounded-[var(--radius-sm)] hover:bg-red-500/10 text-red-500/60 hover:text-red-500 transition-all" title="Supprimer"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+
+                                    {/* ── Sous-composants ── */}
+                                    <div className="ml-9 pl-3 border-l-2 border-blue-500/20 space-y-1 mt-3">
+                                        {comp.sousComposants.map((sc, si) => (
+                                            <div key={sc.id}>
+                                                <div className="flex items-center gap-2 py-1.5">
+                                                    <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
+                                                    <input type="text" value={sc.name} onChange={e => updateSCName(ci, si, e.target.value)} placeholder="Sous-composant..." className="flex-1 min-w-0 bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[12px] font-semibold text-[var(--text-secondary)] px-1 py-0.5 transition-colors" />
+                                                    {/* Actions à droite */}
+                                                    <div className="flex items-center gap-1 flex-shrink-0 border-l border-[var(--border-subtle)] pl-1.5">
+                                                        <button type="button" onClick={() => promoteSC(ci, si)} className="p-1 rounded-[var(--radius-sm)] hover:bg-green-500/10 text-green-500 transition-all" title="Transformer en Composant"><ChevronUp size={15} /></button>
+                                                        <button type="button" onClick={() => demoteSC(ci, si)} disabled={si === 0} className="p-1 rounded-[var(--radius-sm)] hover:bg-orange-500/10 text-orange-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all" title="Transformer en Activité"><ChevronDown size={15} /></button>
+                                                        <button type="button" onClick={() => removeSousComposant(ci, si)} className="p-1 rounded-[var(--radius-sm)] hover:bg-red-500/10 text-red-500/60 hover:text-red-500 transition-all" title="Supprimer"><Trash2 size={12} /></button>
+                                                    </div>
+                                                </div>
+                                                {/* ── Activités ── */}
+                                                <div className="ml-7 pl-3 border-l border-amber-500/15 space-y-0.5 mt-0.5">
+                                                    {sc.activities.map((act, ai) => {
+                                                        const actName = getActivityName(act);
+                                                        const actType = getActivityType(act);
+                                                        const TYPE_COLORS: Record<string, string> = { travaux: "bg-blue-500", fourniture: "bg-amber-500", services: "bg-green-500", etudes: "bg-purple-500", pi: "bg-rose-500" };
+                                                        return (
+                                                            <div key={ai} className="flex items-center gap-1.5 py-0.5 group">
+                                                                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_COLORS[actType] || "bg-purple-500/20"}`} />
+                                                                <input type="text" value={actName} onChange={e => updateActivity(ci, si, ai, e.target.value)} placeholder="Activité..." className="flex-1 min-w-0 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] outline-none text-[11px] text-[var(--text-secondary)] px-2 py-1 focus:border-[var(--accent)] transition-colors" />
+                                                                {/* Type selector */}
+                                                                <select value={actType} onChange={e => updateActivityType(ci, si, ai, e.target.value)} className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[9px] font-semibold text-[var(--text-secondary)] px-1 py-1 focus:outline-none focus:border-[var(--accent)] cursor-pointer w-[120px] flex-shrink-0">
+                                                                    {ACTIVITY_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                                                                </select>
+                                                                {/* Actions (visibles au hover) */}
+                                                                <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity border-l border-[var(--border-subtle)] pl-1">
+                                                                    <button type="button" onClick={() => promoteActivity(ci, si, ai)} className="p-0.5 rounded-[var(--radius-sm)] hover:bg-green-500/10 text-green-500 transition-all" title="Transformer en Sous-composant"><ChevronUp size={14} /></button>
+                                                                    <button type="button" onClick={() => removeActivity(ci, si, ai)} className="p-0.5 rounded-[var(--radius-sm)] hover:bg-red-500/10 text-red-500/60 hover:text-red-500 transition-all" title="Supprimer"><Trash2 size={11} /></button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    <button type="button" onClick={() => addActivity(ci, si)} className="flex items-center gap-1 text-[10px] font-medium text-[var(--accent)] hover:underline mt-1 py-1"><Plus size={10} /> Activité</button>
                                                 </div>
                                             </div>
                                         ))}
-                                        <button onClick={() => addSousComposant(ci)} className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mt-2 pt-1"><Plus size={12} /> Ajouter un sous-composant</button>
+                                        <button type="button" onClick={() => addSousComposant(ci)} className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mt-2 pt-1"><Plus size={12} /> Sous-composant</button>
                                     </div>
                                 </div>
                             ))}
-                            <button onClick={addComponent} className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-[var(--border-default)] rounded-[var(--radius-md)] text-[12px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)] hover:border-[var(--text-tertiary)] transition-all">
+                            <button type="button" onClick={addComponent} className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-[var(--border-default)] rounded-[var(--radius-md)] text-[12px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)] hover:border-[var(--text-tertiary)] transition-all">
                                 <Plus size={14} /> Ajouter un composant
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* Step 4: Summary */}
-                {currentStep === 4 && (
+                {/* Step 5: Arborescence (Prévisualisation) */}
+                {currentStep === 5 && (
+                    <div className="space-y-5">
+                        <div className="flex items-center gap-3 p-4 rounded-[var(--radius-md)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20">
+                            <div className="w-8 h-8 rounded-[var(--radius-md)] bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
+                                <Layers size={16} className="text-[var(--accent)]" />
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">Arborescence du projet</div>
+                                <div className="text-[13px] font-medium text-[var(--text-primary)]">Aperçu de la structure que vous venez de créer</div>
+                            </div>
+                        </div>
+
+                        <div className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] p-5">
+                            <ul className="space-y-4">
+                                {components.map((comp, ci) => (
+                                    <li key={comp.id}>
+                                        <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--text-primary)]">
+                                            <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[10px] flex-shrink-0">C{ci + 1}</div>
+                                            {comp.name || `Composant ${ci + 1}`}
+                                        </div>
+                                        {comp.sousComposants.length > 0 && (
+                                            <ul className="mt-2 ml-3 pl-4 border-l-2 border-[var(--border-subtle)] space-y-3">
+                                                {comp.sousComposants.map((sc, si) => (
+                                                    <li key={sc.id}>
+                                                        <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text-secondary)]">
+                                                            <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
+                                                            {sc.name || `Sous-composant ${si + 1}`}
+                                                        </div>
+                                                        {sc.activities.length > 0 && (
+                                                            <ul className="mt-2 ml-2 pl-4 border-l border-[var(--border-subtle)] space-y-1.5">
+                                                                {sc.activities.map((act, ai) => {
+                                                                    const actType = getActivityType(act);
+                                                                    const TYPE_COLORS: Record<string, string> = { travaux: "bg-blue-500", fourniture: "bg-amber-500", services: "bg-green-500", etudes: "bg-purple-500", pi: "bg-rose-500" };
+                                                                    return (
+                                                                        <li key={ai} className="flex items-center gap-2 text-[12px] text-[var(--text-tertiary)]">
+                                                                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_COLORS[actType] || "bg-gray-400"}`} />
+                                                                            {getActivityName(act) || `Activité ${ai + 1}`}
+                                                                            <span className="ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] uppercase">
+                                                                                {ACTIVITY_TYPES.find(t => t.id === actType)?.label || "Activité"}
+                                                                            </span>
+                                                                        </li>
+                                                                    );
+                                                                })}
+                                                            </ul>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 6: Summary */}
+                {currentStep === 6 && (
                     <div className="text-center py-12">
                         <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
                             <Check size={24} className="text-green-500" />
@@ -669,11 +1421,16 @@ export default function NewProjectPage() {
                             </div>
                             <div className="bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-3 border border-[var(--border-default)]">
                                 <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Budget</div>
-                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{budget ? formatBudget(budget) : "—"}</div>
+                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{budget ? `${Number(budget).toLocaleString("fr-FR")} ${devise}` : "—"}</div>
                             </div>
                             <div className="bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-3 border border-[var(--border-default)]">
                                 <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Financement</div>
-                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{financement.length > 0 ? financement.join(", ") : bailleur}</div>
+                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                    {structureJuridique === "MOP" 
+                                        ? `MOP — ${bailleurs.length > 0 ? bailleurs.map(b => b.nom).join(", ") : "—"}${budgetNational ? " + Budget National" : ""}`
+                                        : `PPP — ${partiesPubliques.length} public, ${partiesPrivees.length} privé`
+                                    }
+                                </div>
                             </div>
                             <div className="bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-3 border border-[var(--border-default)]">
                                 <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Structure</div>
@@ -701,13 +1458,27 @@ export default function NewProjectPage() {
                     </Link>
                     <button
                         onClick={handleNext}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-[var(--radius-md)] text-[13px] font-semibold shadow-[var(--shadow-sm)] transition-all ${currentStep === 4 ? "bg-green-600 hover:bg-green-700 text-white" : "bg-[var(--text-primary)] text-[var(--text-inverted)] hover:opacity-90"}`}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-[var(--radius-md)] text-[13px] font-semibold shadow-[var(--shadow-sm)] transition-all ${currentStep === 6 ? "bg-green-600 hover:bg-green-700 text-white" : "bg-[var(--text-primary)] text-[var(--text-inverted)] hover:opacity-90"}`}
                     >
-                        {currentStep === 4 ? "✓ Créer le projet" : "Suivant"}
-                        {currentStep < 4 && <ArrowRight size={14} />}
+                        {currentStep === 6 ? "✓ Créer le projet" : "Suivant"}
+                        {currentStep < 6 && <ArrowRight size={14} />}
                     </button>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={confirmState !== null}
+                title={confirmState?.title || ""}
+                message={confirmState?.message || ""}
+                confirmLabel="Supprimer"
+                cancelLabel="Annuler"
+                variant="danger"
+                onConfirm={() => {
+                    confirmState?.onConfirm();
+                    setConfirmState(null);
+                }}
+                onCancel={() => setConfirmState(null)}
+            />
         </div>
     );
 }

@@ -1,346 +1,191 @@
-// ══════════════════════════════════════
-// DOCUMENT TRACKING STORE (localStorage)
-// Créé à chaque dépôt GED → visible dans Suivi (même projet, phase, dossier)
-// ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// DOCUMENT TRACKING STORE - Connected to Backend API
+// NO HARDCODED DATA - All data from API
+// ══════════════════════════════════════════════════════════════
+
+import {
+  documentService,
+  type DocumentMetadata,
+  type UploadDocumentDto,
+  type RejectDocumentDto,
+  type TrashDocumentDto,
+} from "@/services/api/documentService";
+
+// ── Types for Frontend Compatibility ──
 
 export type TrackingSteps = {
-  soumis: boolean; // déposé depuis la GED
+  soumis: boolean;
   enRevue: boolean;
   approuve: boolean;
   rejete: boolean;
 };
 
-export type TrackedDocument = {
-  id: string;
-  lineageId: string;
-  version: number;
-  projectId: string;
-  phase: string; // "etude" | "passation" | "execution"
-  folderName: string;
-  fileName: string;
-  fileSize: string;
-  fileType: string;
-  uploadDate: string;
-  uploadedBy: string;
-  steps: TrackingSteps;
-  rejectionReason?: string;
-  trashedAt?: string;
-  trashReason?: string;
-  permanentDeleteReason?: string;
-  deletedAt?: string;
+export type TrackedDocument = DocumentMetadata & {
+  lineageId?: string; // Computed on frontend
+  steps?: TrackingSteps; // Computed from status
 };
 
-const STORAGE_KEY = "edc_document_tracking";
-const TRASH_KEY = "edc_document_tracking_trash";
-const DELETED_KEY = "edc_document_tracking_deleted";
+// ── Helper: Convert backend status to frontend steps ──
 
-function normalizeDoc(d: TrackedDocument): TrackedDocument {
-  const lineageId =
-    d.lineageId ??
-    `${d.projectId}|${d.phase}|${d.folderName}|${d.fileName}`;
+function statusToSteps(status: string): TrackingSteps {
+  switch (status) {
+    case 'valide':
+      return { soumis: true, enRevue: false, approuve: true, rejete: false };
+    case 'rejete':
+      return { soumis: true, enRevue: false, approuve: false, rejete: true };
+    case 'encours':
+      return { soumis: true, enRevue: true, approuve: false, rejete: false };
+    case 'manquant':
+      return { soumis: false, enRevue: false, approuve: false, rejete: false };
+    default:
+      return { soumis: true, enRevue: false, approuve: false, rejete: false };
+  }
+}
+
+// ── Helper: Compute lineage ID ──
+
+function computeLineageId(doc: DocumentMetadata): string {
+  return `${doc.projectId}|${doc.phase}|${doc.folderName}|${doc.fileName}`;
+}
+
+// ── Helper: Enhance document with frontend fields ──
+
+function enhanceDocument(doc: DocumentMetadata): TrackedDocument {
   return {
-    ...d,
-    lineageId,
-    version: d.version ?? 1,
-    steps: {
-      soumis: d.steps?.soumis ?? true,
-      enRevue: d.steps?.enRevue ?? false,
-      approuve: d.steps?.approuve ?? false,
-      rejete: d.steps?.rejete ?? false,
-    },
+    ...doc,
+    lineageId: computeLineageId(doc),
+    steps: statusToSteps(doc.status),
   };
-}
-
-function parseDocs(): TrackedDocument[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return [];
-    const docs: TrackedDocument[] = JSON.parse(stored);
-    return docs.map((d) => normalizeDoc(d));
-  } catch {
-    return [];
-  }
-}
-
-function parseTrash(): TrackedDocument[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(TRASH_KEY);
-    if (!stored) return [];
-    const docs: TrackedDocument[] = JSON.parse(stored);
-    return docs.map((d) => normalizeDoc(d));
-  } catch {
-    return [];
-  }
-}
-
-function saveDocs(docs: TrackedDocument[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-  } catch {
-    console.error("Failed to save tracked documents");
-  }
-}
-
-function saveTrash(docs: TrackedDocument[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(TRASH_KEY, JSON.stringify(docs));
-  } catch {
-    console.error("Failed to save tracked documents trash");
-  }
-}
-
-function saveDeleted(docs: TrackedDocument[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(DELETED_KEY, JSON.stringify(docs));
-  } catch {
-    console.error("Failed to save tracked documents deleted archive");
-  }
-}
-
-/** Garde une seule entrée par lignée (dernière version). */
-function latestByLineage(docs: TrackedDocument[]): TrackedDocument[] {
-  const m = new Map<string, TrackedDocument>();
-  for (const d of docs) {
-    const ex = m.get(d.lineageId);
-    if (!ex || d.version > ex.version) m.set(d.lineageId, d);
-  }
-  return Array.from(m.values());
 }
 
 // ── READ ──
-export function getTrackedDocuments(
+
+export async function getTrackedDocuments(
   projectId?: string,
   phase?: string,
   folderName?: string,
-): TrackedDocument[] {
-  let docs = parseDocs();
-  if (projectId)
-    docs = docs.filter(
-      (d) => d.projectId.toLowerCase() === projectId.toLowerCase(),
-    );
-  if (phase) docs = docs.filter((d) => d.phase === phase);
-  if (folderName) docs = docs.filter((d) => d.folderName === folderName);
-  return docs;
+): Promise<TrackedDocument[]> {
+  const filters: any = {};
+  if (projectId) filters.projectId = projectId;
+  if (phase) filters.phase = phase;
+  // Note: Backend doesn't support folderName filter directly
+  // We'll filter on frontend if needed
+  
+  const docs = await documentService.getAll(filters);
+  let result = docs.map(enhanceDocument);
+  
+  if (folderName) {
+    result = result.filter((d) => d.folderName === folderName);
+  }
+  
+  return result;
 }
 
-/** Même filtres que getTrackedDocuments, mais une seule version (la plus récente) par fichier logique. */
-export function getTrackedDocumentsLatest(
+export async function getTrackedDocumentsLatest(
   projectId?: string,
   phase?: string,
   folderName?: string,
-): TrackedDocument[] {
-  return latestByLineage(getTrackedDocuments(projectId, phase, folderName));
+): Promise<TrackedDocument[]> {
+  const docs = await getTrackedDocuments(projectId, phase, folderName);
+  
+  // Keep only latest version per lineage
+  const latestMap = new Map<string, TrackedDocument>();
+  for (const doc of docs) {
+    const existing = latestMap.get(doc.lineageId!);
+    if (!existing || doc.version > existing.version) {
+      latestMap.set(doc.lineageId!, doc);
+    }
+  }
+  
+  return Array.from(latestMap.values());
 }
 
-export function getTrashedDocuments(
+export async function getTrashedDocuments(
   projectId?: string,
   phase?: string,
-): TrackedDocument[] {
-  let docs = parseTrash();
-  if (projectId)
-    docs = docs.filter(
-      (d) => d.projectId.toLowerCase() === projectId.toLowerCase(),
-    );
-  if (phase) docs = docs.filter((d) => d.phase === phase);
-  return docs;
+): Promise<TrackedDocument[]> {
+  const filters: any = { isTrashed: true };
+  if (projectId) filters.projectId = projectId;
+  if (phase) filters.phase = phase;
+  
+  const docs = await documentService.getAll(filters);
+  return docs.map(enhanceDocument);
 }
 
-// ── CREATE (dépôt GED) : instance Suivi avec statut « Déposé » ──
-export function addTrackedDocument(
-  doc: Omit<TrackedDocument, "id" | "lineageId" | "version" | "steps">,
-): TrackedDocument {
-  const lineageId = `${doc.projectId}|${doc.phase}|${doc.folderName}|${doc.fileName}`;
-  const docs = parseDocs();
-  const versions = docs
-    .filter((d) => d.lineageId === lineageId)
-    .map((d) => d.version);
-  const nextVersion = (versions.length > 0 ? Math.max(...versions) : 0) + 1;
-  const newDoc: TrackedDocument = {
-    ...doc,
-    id: `TD-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    lineageId,
-    version: nextVersion,
-    steps: { soumis: true, enRevue: false, approuve: false, rejete: false },
-  };
-  docs.push(newDoc);
-  saveDocs(docs);
-  return newDoc;
+// ── CREATE (upload) ──
+
+export async function addTrackedDocument(
+  file: File,
+  data: UploadDocumentDto,
+): Promise<TrackedDocument> {
+  const doc = await documentService.upload(file, data);
+  return enhanceDocument(doc);
 }
 
-// ── UPDATE by id (sync GED Valider / Rejeter) ──
-export function updateTrackedDocumentStep(
-  docId: string,
-  step: keyof TrackingSteps,
-  value: boolean,
-): void {
-  const docs = parseDocs();
-  const doc = docs.find((d) => d.id === docId);
-  if (doc) {
-    doc.steps[step] = value;
-    if (step === "approuve" && value) {
-      doc.steps.rejete = false;
-      doc.steps.enRevue = false;
-    }
-    if (step === "rejete" && value) {
-      doc.steps.approuve = false;
-      doc.steps.enRevue = false;
-    }
-    saveDocs(docs);
-  }
+// ── UPDATE (approve/reject) ──
+
+export async function markTrackedDocumentApproved(docId: string): Promise<TrackedDocument> {
+  const doc = await documentService.approve(docId);
+  return enhanceDocument(doc);
 }
 
-/** Après validation GED : document approuvé côté suivi */
-export function markTrackedDocumentApproved(docId: string): void {
-  const docs = parseDocs();
-  const doc = docs.find((d) => d.id === docId);
-  if (doc) {
-    doc.steps = { soumis: true, enRevue: false, approuve: true, rejete: false };
-    saveDocs(docs);
-  }
+export async function markTrackedDocumentRejected(docId: string): Promise<TrackedDocument> {
+  // Note: Backend reject requires a reason
+  const doc = await documentService.reject(docId, { reason: "Rejected" });
+  return enhanceDocument(doc);
 }
 
-/** Après rejet GED */
-export function markTrackedDocumentRejected(docId: string): void {
-  const docs = parseDocs();
-  const doc = docs.find((d) => d.id === docId);
-  if (doc) {
-    doc.steps = { soumis: true, enRevue: false, approuve: false, rejete: true };
-    saveDocs(docs);
-  }
-}
-
-export function rejectTrackedDocumentWithReason(
+export async function rejectTrackedDocumentWithReason(
   docId: string,
   reason: string,
-): void {
-  const docs = parseDocs();
-  const doc = docs.find((d) => d.id === docId);
-  if (!doc) return;
-  doc.steps = { soumis: true, enRevue: false, approuve: false, rejete: true };
-  doc.rejectionReason = reason.trim();
-  saveDocs(docs);
+): Promise<TrackedDocument> {
+  const doc = await documentService.reject(docId, { reason });
+  return enhanceDocument(doc);
 }
 
-export function rollbackApprovalWithNewVersion(
+// ── DELETE (trash/restore) ──
+
+export async function moveTrackedDocumentToTrash(
   docId: string,
-): TrackedDocument | null {
-  const docs = parseDocs();
-  const current = docs.find((d) => d.id === docId);
-  if (!current) return null;
-
-  current.steps = { ...current.steps, approuve: false, enRevue: false };
-
-  const nextVersion =
-    Math.max(
-      ...docs
-        .filter((d) => d.lineageId === current.lineageId)
-        .map((d) => d.version),
-    ) + 1;
-
-  const newVersion: TrackedDocument = {
-    ...current,
-    id: `TD-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    version: nextVersion,
-    uploadDate: new Date().toISOString(),
-    steps: { soumis: true, enRevue: true, approuve: false, rejete: false },
-    rejectionReason: undefined,
-  };
-
-  docs.push(newVersion);
-  saveDocs(docs);
-  return newVersion;
+  reason: string,
+): Promise<void> {
+  await documentService.trash(docId, { reason });
 }
 
-// ── DELETE (suppression fichier GED) ──
-export function removeTrackedDocument(docId: string): void {
-  const docs = parseDocs().filter((d) => d.id !== docId);
-  saveDocs(docs);
+export async function restoreTrackedDocumentFromTrash(docId: string): Promise<TrackedDocument> {
+  const doc = await documentService.restore(docId);
+  return enhanceDocument(doc);
 }
 
-export function moveTrackedDocumentToTrash(docId: string, reason: string): void {
-  const docs = parseDocs();
-  const idx = docs.findIndex((d) => d.id === docId);
-  if (idx === -1) return;
-  const [doc] = docs.splice(idx, 1);
-  const trash = parseTrash();
-  trash.push({
-    ...doc,
-    trashedAt: new Date().toISOString(),
-    trashReason: reason.trim(),
-  });
-  saveDocs(docs);
-  saveTrash(trash);
+export async function permanentlyDeleteFromTrash(
+  docId: string,
+  reason: string,
+): Promise<void> {
+  // Note: Backend doesn't require reason for permanent delete
+  await documentService.delete(docId);
 }
 
-export function restoreTrackedDocumentFromTrash(docId: string): void {
-  const trash = parseTrash();
-  const idx = trash.findIndex((d) => d.id === docId);
-  if (idx === -1) return;
-  const [doc] = trash.splice(idx, 1);
-  const docs = parseDocs();
-  docs.push({
-    ...doc,
-    trashedAt: undefined,
-    trashReason: undefined,
-  });
-  saveTrash(trash);
-  saveDocs(docs);
+export async function removeTrackedDocument(docId: string): Promise<void> {
+  await documentService.delete(docId);
 }
 
-export function permanentlyDeleteFromTrash(docId: string, reason: string): void {
-  const trash = parseTrash();
-  const idx = trash.findIndex((d) => d.id === docId);
-  if (idx === -1) return;
-  const [doc] = trash.splice(idx, 1);
-  saveTrash(trash);
+// ── STATS ──
 
-  const deleted =
-    typeof window === "undefined"
-      ? []
-      : JSON.parse(localStorage.getItem(DELETED_KEY) || "[]");
-  deleted.push({
-    ...doc,
-    permanentDeleteReason: reason.trim(),
-    deletedAt: new Date().toISOString(),
-  });
-  saveDeleted(deleted);
-}
-
-export function removeTrackedDocumentByFile(
+export async function getFolderTrackingStats(
   projectId: string,
   phase: string,
   folderName: string,
-  fileName: string,
-): void {
-  const docs = parseDocs().filter(
-    (d) =>
-      !(
-        d.projectId.toLowerCase() === projectId.toLowerCase() &&
-        d.phase === phase &&
-        d.folderName === folderName &&
-        d.fileName === fileName
-      ),
-  );
-  saveDocs(docs);
-}
-
-// ── STATS dossier ──
-export function getFolderTrackingStats(
-  projectId: string,
-  phase: string,
-  folderName: string,
-): { total: number; approved: number; pct: number } {
-  const docs = getTrackedDocumentsLatest(projectId, phase, folderName);
+): Promise<{ total: number; approved: number; pct: number }> {
+  const docs = await getTrackedDocumentsLatest(projectId, phase, folderName);
   const total = docs.length;
-  const approved = docs.filter((d) => d.steps.approuve).length;
+  const approved = docs.filter((d) => d.status === 'valide').length;
+  
   return {
     total,
     approved,
     pct: total > 0 ? Math.round((approved / total) * 100) : 0,
   };
 }
+
+// Re-export types
+export type { DocumentMetadata, UploadDocumentDto };

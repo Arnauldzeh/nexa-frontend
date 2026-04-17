@@ -11,44 +11,63 @@ import {
     Bell,
 } from "lucide-react";
 import {
-    getCriticalAlerts,
-    getWarningAlerts,
-    getResolvedAlerts,
-    getUnresolvedCount,
-    markAlertResolved,
-    subscribeToAlerts,
+    getAlerts,
+    markAlertAsRead,
     type Alert,
 } from "@/lib/alertStore";
 import { toast } from "@/lib/toastStore";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
+import { getErrorMessage } from "@/services/api/client";
 
 // ══════════════════════════════════════
 // PAGE
 // ══════════════════════════════════════
 
 export default function AlertsPage() {
-    const [critical, setCritical] = useState<Alert[]>([]);
-    const [warning, setWarning] = useState<Alert[]>([]);
-    const [resolved, setResolved] = useState<Alert[]>([]);
+    const [alerts, setAlerts] = useState<Alert[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [showResolved, setShowResolved] = useState(false);
 
-    const refresh = () => {
-        setCritical(getCriticalAlerts());
-        setWarning(getWarningAlerts());
-        setResolved(getResolvedAlerts());
+    const fetchAlerts = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const data = await getAlerts();
+            setAlerts(data);
+        } catch (err: any) {
+            setError(getErrorMessage(err));
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
-        refresh();
-        const unsubscribe = subscribeToAlerts(refresh);
-        return unsubscribe;
+        fetchAlerts();
     }, []);
 
-    const totalUnresolved = getUnresolvedCount();
+    // Filter alerts by status and severity
+    const critical = alerts.filter(a => !a.isRead && a.severity === 'critical');
+    const warning = alerts.filter(a => !a.isRead && a.severity === 'warning');
+    const resolved = alerts.filter(a => a.isRead);
+    const totalUnresolved = critical.length + warning.length;
+
     const formatResolvedDate = (iso: string) => {
         try {
             return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
         } catch {
             return iso;
+        }
+    };
+
+    const handleMarkResolved = async (id: string) => {
+        try {
+            await markAlertAsRead(id);
+            toast.success("Alerte marquée comme résolue");
+            await fetchAlerts();
+        } catch (err: any) {
+            toast.error(getErrorMessage(err));
         }
     };
 
@@ -62,7 +81,7 @@ export default function AlertsPage() {
         onResolve?: (id: string) => void;
     }) => {
         const borderColor = variant === "critical" ? "border-l-red-500" : variant === "warning" ? "border-l-amber-500" : "border-l-green-500";
-        const suiviHref = `/suivi/${alert.projectId.toLowerCase()}`;
+        const suiviHref = `/suivi/${alert.projectCode?.toLowerCase() || 'unknown'}`;
 
         if (variant === "resolved") {
             return (
@@ -70,9 +89,9 @@ export default function AlertsPage() {
                     <div>
                         <h3 className="font-semibold text-[var(--text-secondary)] text-[14px]">✓ {alert.title}</h3>
                         <div className="text-[var(--text-tertiary)] text-[12px] flex items-center gap-2 mt-0.5">
-                            <span>{alert.resolvedAt ? formatResolvedDate(alert.resolvedAt) : "—"}</span>
+                            <span>{alert.readAt ? formatResolvedDate(alert.readAt) : "—"}</span>
                             <span>·</span>
-                            <span>{alert.projectName}</span>
+                            <span>{alert.projectCode}</span>
                         </div>
                     </div>
                 </div>
@@ -84,18 +103,13 @@ export default function AlertsPage() {
                 <div>
                     <div className="flex items-center gap-2 mb-0.5">
                         <h3 className="font-semibold text-[var(--text-primary)] text-[14px]">{alert.title}</h3>
-                        {alert.delay && (
-                            <span className="text-red-500 bg-[var(--danger-subtle)] px-1.5 py-0.5 rounded-[var(--radius-sm)] text-[10px] font-bold border border-red-200 dark:border-red-800/30">
-                                {alert.delay}
-                            </span>
-                        )}
                     </div>
                     <div className="text-[var(--text-secondary)] text-[12px] flex items-center gap-2">
                         <span className="font-mono text-[11px] bg-[var(--bg-inset)] px-1.5 py-0.5 rounded-[var(--radius-sm)] border border-[var(--border-default)]">
                             {alert.projectCode}
                         </span>
                         <span className="text-[var(--text-tertiary)]">·</span>
-                        <span>{alert.projectName}</span>
+                        <span>{alert.message}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -104,7 +118,6 @@ export default function AlertsPage() {
                             onClick={(e) => {
                                 e.preventDefault();
                                 onResolve(alert.id);
-                                toast.success("Alerte marquée comme résolue");
                             }}
                             className="text-[11px] font-medium text-green-600 hover:text-green-700 hover:underline"
                         >
@@ -121,6 +134,22 @@ export default function AlertsPage() {
             </div>
         );
     };
+
+    if (loading) {
+        return (
+            <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full max-w-4xl">
+                <LoadingSpinner size="lg" className="min-h-[400px]" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full max-w-4xl">
+                <ErrorDisplay error={error} retry={fetchAlerts} />
+            </div>
+        );
+    }
 
     return (
         <div className="px-[var(--page-px)] py-[var(--page-py)] min-h-full max-w-4xl">
@@ -156,7 +185,7 @@ export default function AlertsPage() {
                                     key={alert.id}
                                     alert={alert}
                                     variant="critical"
-                                    onResolve={markAlertResolved}
+                                    onResolve={handleMarkResolved}
                                 />
                             ))
                         )}
@@ -177,7 +206,7 @@ export default function AlertsPage() {
                                     key={alert.id}
                                     alert={alert}
                                     variant="warning"
-                                    onResolve={markAlertResolved}
+                                    onResolve={handleMarkResolved}
                                 />
                             ))
                         )}

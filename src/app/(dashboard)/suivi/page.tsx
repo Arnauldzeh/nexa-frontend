@@ -8,8 +8,8 @@ import {
     Network,
 } from "lucide-react";
 import Link from "next/link";
-import { getProjects, type ProjectData } from "@/lib/projectStore";
-import { getUnresolvedCountForProject, subscribeToAlerts } from "@/lib/alertStore";
+import { getProjects, type Project } from "@/lib/projectStore";
+import { getProjectAlerts } from "@/lib/alertStore";
 
 // ══════════════════════════════════════
 // DATA
@@ -37,20 +37,33 @@ const GRADIENT_COLORS = [
     "from-pink-500 to-rose-600",
 ];
 
-function mapToSuivi(projects: ProjectData[]): ProjetSuivi[] {
-    return projects.map((p, i) => ({
-        id: p.id.toLowerCase(),
-        code: p.code || p.id,
-        name: p.name,
-        type: p.description || "Projet d'infrastructure",
-        region: p.region || "—",
-        budget: p.budget,
-        pct: p.progress,
-        alerts: getUnresolvedCountForProject(p.id),
-        composants: p.components.length,
-        status: p.progress >= 80 ? "ok" : p.progress > 0 ? "progress" : "retard",
-        color: GRADIENT_COLORS[i % GRADIENT_COLORS.length],
-    }));
+async function mapToSuivi(projects: Project[]): Promise<ProjetSuivi[]> {
+    const mapped = await Promise.all(
+        projects.map(async (p, i) => {
+            let alertCount = 0;
+            try {
+                const alerts = await getProjectAlerts(p.code);
+                alertCount = alerts.filter(a => !a.isRead).length;
+            } catch {
+                alertCount = 0;
+            }
+
+            return {
+                id: p.code.toLowerCase(),
+                code: p.code,
+                name: p.name,
+                type: p.description || "Projet d'infrastructure",
+                region: p.localisation?.region || "—",
+                budget: p.budget,
+                pct: p.progress,
+                alerts: alertCount,
+                composants: p.components.length,
+                status: (p.progress >= 80 ? "ok" : p.progress > 0 ? "progress" : "retard") as "ok" | "progress" | "retard",
+                color: GRADIENT_COLORS[i % GRADIENT_COLORS.length],
+            };
+        })
+    );
+    return mapped;
 }
 
 // ══════════════════════════════════════
@@ -61,11 +74,14 @@ export default function SuiviPage() {
     const [projets, setProjets] = useState<ProjetSuivi[]>([]);
 
     useEffect(() => {
-        const refresh = () => setProjets(mapToSuivi(getProjects()));
-        refresh();
-        const unsubscribe = subscribeToAlerts(refresh);
-        return unsubscribe;
+        loadData();
     }, []);
+
+    async function loadData() {
+        const projects = await getProjects();
+        const mapped = await mapToSuivi(projects);
+        setProjets(mapped);
+    }
 
     const getBarColor = (pct: number) =>
         pct >= 80 ? "bg-green-500" : pct >= 40 ? "bg-blue-500" : pct > 0 ? "bg-amber-500" : "bg-[var(--bg-surface-active)]";

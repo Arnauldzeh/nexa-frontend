@@ -1,106 +1,118 @@
-// ══════════════════════════════════════
-// FRONTEND-ONLY PROJECT STORE (localStorage)
-// ══════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// PROJECT STORE - Connected to Backend API
+// NO HARDCODED DATA - All data from API
+// ══════════════════════════════════════════════════════════════
 
-export type ProjectData = {
-    id: string;
-    name: string;
-    code: string;
-    description: string;
-    region: string;
-    departement: string;
-    ville: string;
-    budget: string;
-    capacite: string;
-    dateDebut: string;
-    dateFin: string;
-    financement: string[];
-    bailleur: string;
-    progress: number;
-    alerts: number;
-    components: ComponentData[];
-    createdAt: string;
-};
+import {
+  projectService,
+  type Project,
+  type CreateProjectDto,
+  type UpdateProjectDto,
+  type Activity,
+  type SousComposant,
+  type Component,
+} from "@/services/api/projectService";
+import { formatBudget, parseBudget } from "./helpers/budgetHelpers";
 
-export type ComponentData = {
-    id: string;
-    name: string;
-    sousComposants: SousComposantData[];
-};
+// ── Projects CRUD ──
 
-export type SousComposantData = {
-    id: string;
-    name: string;
-    activities: string[];
-};
-
-const STORAGE_KEY = "edc_projects";
-
-// Projet par défaut (unique) : Lom Pangar
-const DEFAULT_PROJECTS: ProjectData[] = [
-    {
-        id: "PRJ-2008-001",
-        name: "Lom Pangar",
-        code: "PRJ-2008-001",
-        description: "Configuration du projet • Infrastructure Hydroélectrique",
-        region: "Région de l'Est",
-        departement: "Lom-et-Djérem",
-        ville: "Bélabo",
-        budget: "420 Mrd FCFA",
-        capacite: "30 MW",
-        dateDebut: "2008-01-01",
-        dateFin: "2025-12-31",
-        financement: ["Bailleur"],
-        bailleur: "Banque Mondiale",
-        progress: 72,
-        alerts: 2,
-        components: [
-            {
-                id: "barrage", name: "Barrage", sousComposants: [
-                    { id: "fond", name: "Fondations", activities: ["Fouilles", "Béton de propreté"] },
-                    { id: "corps", name: "Corps barrage", activities: ["Montage des murs", "Passage graviers", "Fondations profondes", "Toiture & finitions"] },
-                    { id: "evac", name: "Évacuateur de crues", activities: ["Terrassement"] },
-                    { id: "prise", name: "Ouvrage de prise", activities: ["Installation conduites"] },
-                ]
-            },
-            { id: "usine", name: "Usine", sousComposants: [{ id: "turb", name: "Turbines", activities: ["Montage", "Tests"] }] },
-            { id: "route", name: "Route d'accès", sousComposants: [{ id: "trc", name: "Tronçon principal", activities: ["Terrassement", "Revêtement"] }] },
-            { id: "cite", name: "Cité", sousComposants: [{ id: "log", name: "Logements", activities: ["Construction", "Aménagement"] }, { id: "vrd", name: "VRD", activities: ["Voirie", "Réseaux"] }] },
-        ],
-        createdAt: "2008-01-15",
-    },
-];
-
-export function getProjects(): ProjectData[] {
-    if (typeof window === "undefined") return DEFAULT_PROJECTS;
-    try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (!stored) return DEFAULT_PROJECTS;
-        const custom: ProjectData[] = JSON.parse(stored);
-        return [...DEFAULT_PROJECTS, ...custom];
-    } catch {
-        return DEFAULT_PROJECTS;
-    }
+export async function getProjects(region?: string): Promise<Project[]> {
+  return await projectService.getAll(region);
 }
 
-export function addProject(project: ProjectData): void {
-    if (typeof window === "undefined") return;
-    try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const existing: ProjectData[] = stored ? JSON.parse(stored) : [];
-        existing.push(project);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    } catch {
-        console.error("Failed to save project");
-    }
+export async function getProjectById(code: string): Promise<Project | undefined> {
+  try {
+    return await projectService.getByCode(code);
+  } catch {
+    return undefined;
+  }
 }
 
+export async function addProject(project: CreateProjectDto): Promise<Project> {
+  return await projectService.create(project);
+}
+
+export async function updateProject(code: string, updates: UpdateProjectDto): Promise<Project> {
+  return await projectService.update(code, updates);
+}
+
+export async function deleteProject(code: string): Promise<void> {
+  await projectService.delete(code);
+}
+
+export async function getProjectStats(): Promise<{ total: number; avgProgress: number }> {
+  return await projectService.getStats();
+}
+
+// ── Helper Functions ──
+
+/**
+ * Generate a unique project code (client-side temporary, backend will generate the real one)
+ */
 export function generateProjectCode(): string {
-    const year = new Date().getFullYear();
-    const rand = String(Math.floor(Math.random() * 900) + 100);
-    return `PRJ-${year}-${rand}`;
+  const year = new Date().getFullYear();
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `PRJ-${year}-${random}`;
 }
 
-export function getProjectById(id: string): ProjectData | undefined {
-    return getProjects().find(p => p.id.toLowerCase() === id.toLowerCase());
+/**
+ * Format project budget for display
+ */
+export function formatProjectBudget(project: Project): string {
+  if (!project.budget) return "N/A";
+  return formatBudget(project.budget, project.devise);
 }
+
+/**
+ * Get project region
+ */
+export function getProjectRegion(project: Project): string {
+  return project.localisation?.region || "N/A";
+}
+
+/**
+ * Get project city
+ */
+export function getProjectCity(project: Project): string {
+  return project.localisation?.ville || "N/A";
+}
+
+/**
+ * Get project location string
+ */
+export function getProjectLocation(project: Project): string {
+  const parts = [];
+  if (project.localisation?.ville) parts.push(project.localisation.ville);
+  if (project.localisation?.region) parts.push(project.localisation.region);
+  return parts.join(", ") || "N/A";
+}
+
+// Activity types (kept for UI)
+export const ACTIVITY_TYPES = [
+  { id: "travaux", label: "Travaux" },
+  { id: "fourniture", label: "Fourniture" },
+  { id: "services", label: "Services" },
+  { id: "etudes", label: "Études" },
+  { id: "pi", label: "Prestations Intellectuelles" },
+] as const;
+
+export type ActivityTypeId = typeof ACTIVITY_TYPES[number]["id"];
+
+// Helper: extract name from activity
+export function getActivityName(act: Activity): string {
+  return act.name;
+}
+
+// Helper: extract type from activity
+export function getActivityType(act: Activity): string {
+  return act.typeActivite;
+}
+
+// Type aliases for backward compatibility
+export type ComponentData = Component;
+export type SousComposantData = SousComposant;
+export type ActivityDef = Activity;
+
+// Re-export types
+export type { Project, CreateProjectDto, UpdateProjectDto, Activity, SousComposant, Component };
+export type { Localisation, Financement, Bailleur, Coordinates } from "@/services/api/projectService";

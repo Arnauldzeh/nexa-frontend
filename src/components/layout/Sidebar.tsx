@@ -8,30 +8,72 @@ import {
     FolderOpen,
     Eye,
     Bell,
+    Users,
     ChevronRight,
     ChevronLeft,
     Sun,
     Moon,
+    Settings,
+    Calendar,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { getUnresolvedCount, subscribeToAlerts } from "@/lib/alertStore";
+import { alertService } from "@/services/api";
+import { usePermissions } from "@/hooks/usePermissions";
+import { UserSessionSwitcher } from "@/components/auth/AuthProvider";
+import { getUserProjects } from "@/lib/userStore";
 
 export function Sidebar() {
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [alertsCount, setAlertsCount] = useState(() => getUnresolvedCount());
+    const [mounted, setMounted] = useState(false);
+    const [alertsCount, setAlertsCount] = useState(0);
+    const [hasChefProjetRole, setHasChefProjetRole] = useState(false);
     const { theme, setTheme } = useTheme();
+    const { isAdmin, user } = usePermissions();
 
     useEffect(() => {
-        const unsubscribe = subscribeToAlerts(() => setAlertsCount(getUnresolvedCount()));
-        return unsubscribe;
+        setMounted(true);
+        
+        // Check if user is a chef_projet on ANY project
+        const checkUserRole = async () => {
+            if (user) {
+                try {
+                    const projects = await getUserProjects(user.id);
+                    const isChef = projects.some((a: any) => a.projectRole === "chef_projet");
+                    setHasChefProjetRole(isChef);
+                } catch (error) {
+                    console.error('Error checking user role:', error);
+                }
+            }
+        };
+        
+        checkUserRole();
+        
+        // Fetch unread alerts count
+        const fetchAlertsCount = async () => {
+            try {
+                const count = await alertService.getCount();
+                setAlertsCount(count);
+            } catch (error) {
+                console.error('Error fetching alerts count:', error);
+            }
+        };
+        
+        fetchAlertsCount();
+        
+        // Refresh count every 30 seconds
+        const interval = setInterval(fetchAlertsCount, 30000);
+        return () => clearInterval(interval);
     }, []);
 
     const navigation = [
         { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
-        { name: "Projet Doc", href: "/projects", icon: FolderOpen },
+        { name: "Initialisation", href: "/projects", icon: Settings },
+        { name: "Planification", href: "/planification", icon: Calendar },
+        { name: "Archives", href: "/archives", icon: FolderOpen },
         { name: "Suivi", href: "/suivi", icon: Eye },
+        { name: "Utilisateurs", href: "/users", icon: Users },
         {
             name: "Alertes",
             href: "/alerts",
@@ -66,6 +108,11 @@ export function Sidebar() {
             {/* ── Navigation ── */}
             <div className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
                 {navigation.map((item) => {
+                    // Masquer "Utilisateurs" sauf pour l'admin
+                    // TEMPORAIREMENT DÉSACTIVÉ POUR LES TESTS: Permet à tout le monde de tout voir
+                    // if (item.name === "Utilisateurs" && !isAdmin) return null;
+                    // if (item.name === "Initialisation" && !isAdmin && !hasChefProjetRole) return null;
+
                     const active = isActive(item.href);
                     return (
                         <Link
@@ -151,27 +198,16 @@ export function Sidebar() {
                     </button>
                 </div>
 
-                {/* Profile */}
-                <button className={`flex items-center rounded-[var(--radius-md)] p-2 transition-all duration-150 hover:bg-[var(--bg-surface-hover)] group text-left ${isCollapsed ? "justify-center" : "gap-3"}`}>
-                    <div className="h-8 w-8 rounded-[var(--radius-md)] bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold shadow-[var(--shadow-sm)]">
-                        IM
-                    </div>
-
-                    {!isCollapsed && (
-                        <div className="flex flex-1 flex-col overflow-hidden">
-                            <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
-                                Ibrahim M.
-                            </span>
-                            <span className="text-[10px] text-[var(--text-tertiary)] truncate">
-                                Chef de Projet
-                            </span>
+                {/* Profile Session Switcher */}
+                {!isCollapsed ? (
+                    <UserSessionSwitcher />
+                ) : (
+                    <div className="flex justify-center py-2">
+                        <div className="w-8 h-8 rounded-[var(--radius-md)] bg-gradient-to-br from-blue-500 to-violet-600 shadow-[var(--shadow-sm)] flex items-center justify-center text-white text-[10px] font-bold">
+                            ME
                         </div>
-                    )}
-
-                    {!isCollapsed && (
-                        <ChevronRight size={12} className="text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] flex-shrink-0" />
-                    )}
-                </button>
+                    </div>
+                )}
             </div>
         </div>
     );
