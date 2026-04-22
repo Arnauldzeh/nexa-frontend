@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle2, ChevronUp, ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
-import { addProject, generateProjectCode, ACTIVITY_TYPES, getActivityName, getActivityType, type ComponentData, type SousComposantData, type ActivityDef } from "@/lib/projectStore";
+import { addProject, generateProjectCode, ACTIVITY_TYPES, getActivityName, getActivityType, isComponentLowestLevel, isSousComposantLowestLevel, type ComponentData, type SousComposantData, type ActivityDef } from "@/lib/projectStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
@@ -440,7 +440,8 @@ export default function NewProjectPage() {
     ]);
 
     const addComponent = () => {
-        setComponents(prev => [...prev, { id: `c${Date.now()}`, name: "", sousComposants: [] }]);
+        // Nouvelle composante sans sous-composantes = niveau le plus bas, donc ajouter typeActivite
+        setComponents(prev => [...prev, { id: `c${Date.now()}`, name: "", sousComposants: [], typeActivite: "travaux" }]);
     };
     const removeComponent = (idx: number) => {
         setConfirmState({
@@ -456,7 +457,15 @@ export default function NewProjectPage() {
         setComponents(prev => prev.map((c, i) => i === idx ? { ...c, name } : c));
     };
     const addSousComposant = (compIdx: number) => {
-        setComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] } : c));
+        setComponents(prev => prev.map((c, i) => {
+            if (i !== compIdx) return c;
+            // Quand on ajoute une sous-composante, retirer le typeActivite de la composante
+            const { typeActivite, ...compWithoutType } = c;
+            return { 
+                ...compWithoutType, 
+                sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] 
+            };
+        }));
     };
     const removeSousComposant = (compIdx: number, scIdx: number) => {
         setConfirmState({
@@ -464,7 +473,15 @@ export default function NewProjectPage() {
             title: "Supprimer le sous-composant",
             message: "Êtes-vous sûr de vouloir supprimer ce sous-composant ? Cette action est irréversible.",
             onConfirm: () => {
-                setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.filter((_, si) => si !== scIdx) } : c));
+                setComponents(prev => prev.map((c, ci) => {
+                    if (ci !== compIdx) return c;
+                    const updatedSCs = c.sousComposants.filter((_, si) => si !== scIdx);
+                    // Si on supprime la dernière sous-composante, ajouter typeActivite à la composante
+                    if (updatedSCs.length === 0) {
+                        return { ...c, sousComposants: updatedSCs, typeActivite: "travaux" };
+                    }
+                    return { ...c, sousComposants: updatedSCs };
+                }));
             }
         });
     };
@@ -473,7 +490,18 @@ export default function NewProjectPage() {
     };
     const addActivity = (compIdx: number, scIdx: number, typeActivite: string = "travaux") => {
         const newAct: ActivityDef = { name: "", typeActivite };
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: [...sc.activities, newAct] } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => {
+            if (ci !== compIdx) return c;
+            return {
+                ...c,
+                sousComposants: c.sousComposants.map((sc, si) => {
+                    if (si !== scIdx) return sc;
+                    // Quand on ajoute une activité, retirer le typeActivite de la sous-composante
+                    const { typeActivite: scType, ...scWithoutType } = sc;
+                    return { ...scWithoutType, activities: [...sc.activities, newAct] };
+                })
+            };
+        }));
     };
     const updateActivity = (compIdx: number, scIdx: number, actIdx: number, val: string) => {
         setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: val, typeActivite: "travaux" } : { ...a, name: val }) : a) } : sc) } : c));
@@ -487,7 +515,21 @@ export default function NewProjectPage() {
             title: "Supprimer l'activité",
             message: "Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible.",
             onConfirm: () => {
-                setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.filter((_, ai) => ai !== actIdx) } : sc) } : c));
+                setComponents(prev => prev.map((c, ci) => {
+                    if (ci !== compIdx) return c;
+                    return {
+                        ...c,
+                        sousComposants: c.sousComposants.map((sc, si) => {
+                            if (si !== scIdx) return sc;
+                            const updatedActivities = sc.activities.filter((_, ai) => ai !== actIdx);
+                            // Si on supprime la dernière activité, ajouter typeActivite à la sous-composante
+                            if (updatedActivities.length === 0) {
+                                return { ...sc, activities: updatedActivities, typeActivite: "travaux" };
+                            }
+                            return { ...sc, activities: updatedActivities };
+                        })
+                    };
+                }));
             }
         });
     };
@@ -495,6 +537,14 @@ export default function NewProjectPage() {
     // Budget par composant
     const updateComponentBudget = (idx: number, budget: string) => {
         setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget } : c));
+    };
+
+    // TypeActivite pour composantes et sous-composantes
+    const updateComponentType = (idx: number, typeActivite: string) => {
+        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, typeActivite } : c));
+    };
+    const updateSCType = (compIdx: number, scIdx: number, typeActivite: string) => {
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, typeActivite } : sc) } : c));
     };
 
     // ═══ Réordonnancement (même niveau) ═══
@@ -1274,7 +1324,7 @@ export default function NewProjectPage() {
                         <div className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] p-4 space-y-3">
                             {components.map((comp, ci) => (
                                 <div key={comp.id} className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] p-4">
-                                    {/* ── Composant : Nom + Budget + Actions ── */}
+                                    {/* ── Composant : Nom + Budget + TypeActivite (si niveau le plus bas) + Actions ── */}
                                     <div className="flex items-center gap-2">
                                         <div className="w-7 h-7 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[10px] flex-shrink-0">C{ci + 1}</div>
                                         <input type="text" value={comp.name} onChange={e => updateComponentName(ci, e.target.value)} placeholder="Nom du composant..." className="flex-1 min-w-0 bg-transparent border-b-2 border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[14px] font-bold text-[var(--text-primary)] px-1 py-1 transition-colors" />
@@ -1283,6 +1333,12 @@ export default function NewProjectPage() {
                                             <input type="number" value={comp.budget || ""} onChange={e => updateComponentBudget(ci, e.target.value)} placeholder="Budget" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] pr-12 focus:outline-none focus:border-[var(--accent)] transition-colors" />
                                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-tertiary)] font-bold">{devise}</span>
                                         </div>
+                                        {/* Type d'activité (si niveau le plus bas) */}
+                                        {isComponentLowestLevel(comp) && (
+                                            <select value={comp.typeActivite || "travaux"} onChange={e => updateComponentType(ci, e.target.value)} className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[10px] font-semibold text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] cursor-pointer w-[140px] flex-shrink-0">
+                                                {ACTIVITY_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                                            </select>
+                                        )}
                                         {/* Actions à droite */}
                                         <div className="flex items-center gap-1 flex-shrink-0 ml-1 border-l border-[var(--border-subtle)] pl-2">
                                             <button type="button" onClick={() => demoteComponent(ci)} disabled={ci === 0} className="p-1.5 rounded-[var(--radius-sm)] hover:bg-orange-500/10 text-orange-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all" title="Transformer en Sous-composant"><ChevronDown size={16} /></button>
@@ -1297,6 +1353,12 @@ export default function NewProjectPage() {
                                                 <div className="flex items-center gap-2 py-1.5">
                                                     <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
                                                     <input type="text" value={sc.name} onChange={e => updateSCName(ci, si, e.target.value)} placeholder="Sous-composant..." className="flex-1 min-w-0 bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[12px] font-semibold text-[var(--text-secondary)] px-1 py-0.5 transition-colors" />
+                                                    {/* Type d'activité (si niveau le plus bas) */}
+                                                    {isSousComposantLowestLevel(sc) && (
+                                                        <select value={sc.typeActivite || "travaux"} onChange={e => updateSCType(ci, si, e.target.value)} className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[9px] font-semibold text-[var(--text-secondary)] px-1.5 py-1 focus:outline-none focus:border-[var(--accent)] cursor-pointer w-[120px] flex-shrink-0">
+                                                            {ACTIVITY_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                                                        </select>
+                                                    )}
                                                     {/* Actions à droite */}
                                                     <div className="flex items-center gap-1 flex-shrink-0 border-l border-[var(--border-subtle)] pl-1.5">
                                                         <button type="button" onClick={() => promoteSC(ci, si)} className="p-1 rounded-[var(--radius-sm)] hover:bg-green-500/10 text-green-500 transition-all" title="Transformer en Composant"><ChevronUp size={15} /></button>

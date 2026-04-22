@@ -1,8 +1,8 @@
-// ══════════════════════════════════════════════════════════════
-// DOCUMENT SERVICE - Documents API
-// ══════════════════════════════════════════════════════════════
+import { apiClient } from './client';
 
-import apiClient, { ApiResponse } from './client';
+// ══════════════════════════════════════════════════════════════
+// TYPES
+// ══════════════════════════════════════════════════════════════
 
 export interface DocumentMetadata {
   _id: string;
@@ -12,6 +12,7 @@ export interface DocumentMetadata {
   fileName: string;
   fileSize?: string;
   fileType?: string;
+  filePath: string;
   version: number;
   status: 'encours' | 'valide' | 'rejete' | 'manquant';
   uploadedBy: string;
@@ -26,132 +27,194 @@ export interface DocumentMetadata {
   trashReason?: string;
   trashedAt?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface UploadDocumentDto {
+export interface UploadDocumentParams {
   projectId: string;
-  phase: 'etude' | 'passation' | 'execution';
+  phase: string;
   folderName: string;
+  context?: string;
+  file: File;
 }
 
-export interface RejectDocumentDto {
-  reason: string;
+export interface DocumentFilters {
+  projectId?: string;
+  phase?: string;
+  context?: string;
+  status?: string;
+  isTrashed?: boolean;
 }
 
-export interface TrashDocumentDto {
-  reason: string;
+export interface DocumentStats {
+  _id: string;
+  count: number;
 }
 
-export const documentService = {
-  /**
-   * Upload document
-   */
-  async upload(file: File, data: UploadDocumentDto): Promise<DocumentMetadata> {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('projectId', data.projectId);
-    formData.append('phase', data.phase);
-    formData.append('folderName', data.folderName);
+// ══════════════════════════════════════════════════════════════
+// API FUNCTIONS
+// ══════════════════════════════════════════════════════════════
 
-    const response = await apiClient.post<ApiResponse<DocumentMetadata>>(
-      '/documents/upload',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+/**
+ * Upload un document
+ */
+export async function uploadDocument(params: UploadDocumentParams): Promise<DocumentMetadata> {
+  const formData = new FormData();
+  formData.append('file', params.file);
+  formData.append('projectId', params.projectId);
+  formData.append('phase', params.phase);
+  formData.append('folderName', params.folderName);
+
+  const response = await apiClient.post<{ data: DocumentMetadata }>('/documents/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data.data;
+}
+
+/**
+ * Récupère tous les documents avec filtres optionnels
+ */
+export async function getDocuments(filters?: DocumentFilters): Promise<DocumentMetadata[]> {
+  const params = new URLSearchParams();
+  
+  if (filters?.projectId) params.append('projectId', filters.projectId);
+  if (filters?.phase) params.append('phase', filters.phase);
+  if (filters?.context) params.append('context', filters.context);
+  if (filters?.status) params.append('status', filters.status);
+  if (filters?.isTrashed !== undefined) params.append('isTrashed', String(filters.isTrashed));
+
+  const response = await apiClient.get<{ data: DocumentMetadata[] }>(`/documents?${params.toString()}`);
+  return response.data.data;
+}
+
+/**
+ * Récupère les documents d'un projet et d'une phase spécifique
+ */
+export async function getProjectPhaseDocuments(
+  projectId: string,
+  phase: string,
+): Promise<DocumentMetadata[]> {
+  return getDocuments({ projectId, phase, isTrashed: false });
+}
+
+/**
+ * Récupère les documents en corbeille
+ */
+export async function getTrashedDocuments(
+  projectId: string,
+  phase?: string,
+): Promise<DocumentMetadata[]> {
+  return getDocuments({ projectId, phase, isTrashed: true });
+}
+
+/**
+ * Récupère un document par son ID
+ */
+export async function getDocumentById(id: string): Promise<DocumentMetadata> {
+  const response = await apiClient.get<{ data: DocumentMetadata }>(`/documents/${id}`);
+  return response.data.data;
+}
+
+/**
+ * Télécharge un document
+ */
+export async function downloadDocument(id: string, fileName: string): Promise<void> {
+  const response = await apiClient.get(`/documents/${id}/download`, {
+    responseType: 'blob',
+  });
+
+  // Créer un lien de téléchargement
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Approuve un document
+ */
+export async function approveDocument(id: string): Promise<DocumentMetadata> {
+  const response = await apiClient.patch<{ data: DocumentMetadata }>(`/documents/${id}/approve`);
+  return response.data.data;
+}
+
+/**
+ * Rejette un document avec un motif
+ */
+export async function rejectDocument(id: string, reason: string): Promise<DocumentMetadata> {
+  const response = await apiClient.patch<{ data: DocumentMetadata }>(`/documents/${id}/reject`, {
+    reason,
+  });
+  return response.data.data;
+}
+
+/**
+ * Déplace un document vers la corbeille
+ */
+export async function trashDocument(id: string, reason: string): Promise<DocumentMetadata> {
+  const response = await apiClient.patch<{ data: DocumentMetadata }>(`/documents/${id}/trash`, {
+    reason,
+  });
+  return response.data.data;
+}
+
+/**
+ * Restaure un document depuis la corbeille
+ */
+export async function restoreDocument(id: string): Promise<DocumentMetadata> {
+  const response = await apiClient.patch<{ data: DocumentMetadata }>(`/documents/${id}/restore`);
+  return response.data.data;
+}
+
+/**
+ * Supprime définitivement un document
+ */
+export async function deleteDocument(id: string): Promise<void> {
+  await apiClient.delete(`/documents/${id}`);
+}
+
+/**
+ * Récupère les statistiques des documents d'un projet
+ */
+export async function getDocumentStats(
+  projectId: string,
+  phase?: string,
+): Promise<DocumentStats[]> {
+  const params = phase ? `?phase=${phase}` : '';
+  const response = await apiClient.get<{ data: DocumentStats[] }>(
+    `/documents/stats/${projectId}${params}`,
+  );
+  return response.data.data;
+}
+
+/**
+ * Récupère les dernières versions des documents pour un dossier
+ */
+export async function getLatestDocumentVersions(
+  projectId: string,
+  phase: string,
+  folderName: string,
+): Promise<DocumentMetadata[]> {
+  const allDocs = await getProjectPhaseDocuments(projectId, phase);
+  
+  // Filtrer par dossier et garder seulement la dernière version de chaque fichier
+  const docsByFile = new Map<string, DocumentMetadata>();
+  
+  allDocs
+    .filter((doc) => doc.folderName === folderName)
+    .forEach((doc) => {
+      const existing = docsByFile.get(doc.fileName);
+      if (!existing || doc.version > existing.version) {
+        docsByFile.set(doc.fileName, doc);
       }
-    );
-    return response.data.data!;
-  },
-
-  /**
-   * Get all documents
-   */
-  async getAll(filters?: {
-    projectId?: string;
-    phase?: string;
-    status?: string;
-    isTrashed?: boolean;
-  }): Promise<DocumentMetadata[]> {
-    const response = await apiClient.get<ApiResponse<DocumentMetadata[]>>('/documents', {
-      params: filters,
     });
-    return response.data.data || [];
-  },
-
-  /**
-   * Get document by ID
-   */
-  async getById(id: string): Promise<DocumentMetadata> {
-    const response = await apiClient.get<ApiResponse<DocumentMetadata>>(`/documents/${id}`);
-    return response.data.data!;
-  },
-
-  /**
-   * Get document statistics
-   */
-  async getStats(projectId: string, phase?: string): Promise<any> {
-    const params = phase ? { phase } : {};
-    const response = await apiClient.get<ApiResponse<any>>(
-      `/documents/stats/${projectId}`,
-      { params }
-    );
-    return response.data.data!;
-  },
-
-  /**
-   * Download document
-   */
-  async download(id: string): Promise<Blob> {
-    const response = await apiClient.get(`/documents/${id}/download`, {
-      responseType: 'blob',
-    });
-    return response.data;
-  },
-
-  /**
-   * Approve document
-   */
-  async approve(id: string): Promise<DocumentMetadata> {
-    const response = await apiClient.patch<ApiResponse<DocumentMetadata>>(
-      `/documents/${id}/approve`
-    );
-    return response.data.data!;
-  },
-
-  /**
-   * Reject document
-   */
-  async reject(id: string, data: RejectDocumentDto): Promise<DocumentMetadata> {
-    const response = await apiClient.patch<ApiResponse<DocumentMetadata>>(
-      `/documents/${id}/reject`,
-      data
-    );
-    return response.data.data!;
-  },
-
-  /**
-   * Move to trash
-   */
-  async trash(id: string, data: TrashDocumentDto): Promise<void> {
-    await apiClient.patch(`/documents/${id}/trash`, data);
-  },
-
-  /**
-   * Restore from trash
-   */
-  async restore(id: string): Promise<DocumentMetadata> {
-    const response = await apiClient.patch<ApiResponse<DocumentMetadata>>(
-      `/documents/${id}/restore`
-    );
-    return response.data.data!;
-  },
-
-  /**
-   * Delete permanently
-   */
-  async delete(id: string): Promise<void> {
-    await apiClient.delete(`/documents/${id}`);
-  },
-};
+  
+  return Array.from(docsByFile.values());
+}

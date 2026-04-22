@@ -17,15 +17,9 @@ import {
   moveTrackedDocumentToTrash,
   permanentlyDeleteFromTrash,
   rejectTrackedDocumentWithReason,
-  removeTrackedDocument,
   restoreTrackedDocumentFromTrash,
+  type TrackedDocument,
 } from "@/lib/documentTrackingStore";
-import { isLomPangar } from "@/lib/gedTemplates";
-import {
-  EMPTY_ETUDE_DOCS,
-  EMPTY_PASSATION_DOCS,
-  EMPTY_EXECUTION_DOCS,
-} from "@/lib/gedTemplates";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import Link from "next/link";
@@ -141,267 +135,6 @@ const formatUploadDate = (iso: string) => {
     return iso;
   }
 };
-
-/** Fusionne les docs initiaux avec les fichiers déposés (store suivi) pour réafficher après navigation */
-async function mergeTrackedIntoDocs(
-  phaseDocs: DocData[],
-  projectId: string,
-  phase: string,
-): Promise<DocData[]> {
-  const mergedDocs = await Promise.all(
-    phaseDocs.map(async (doc) => {
-      const tracked = await getTrackedDocumentsLatest(projectId, phase, doc.name);
-      const existingNames = new Set(doc.files.map((f) => f.name));
-      const fromTracked: FileData[] = (tracked || [])
-        .filter((t) => !existingNames.has(t.fileName))
-        .map((t) => ({
-          name: t.fileName,
-          size: t.fileSize,
-          type: (["pdf", "dwg", "zip", "xls", "doc"].includes(t.fileType)
-            ? t.fileType
-            : "pdf") as FileData["type"],
-          status: (t.steps.approuve
-            ? "valide"
-            : t.steps.rejete
-              ? "manquant"
-              : "encours") as FileStatus,
-          lastModif: formatUploadDate(t.uploadDate),
-          lastModifBy: t.uploadedBy,
-          trackingId: t.id,
-          version: t.version,
-        rejectionReason: t.rejectionReason,
-      }));
-      if (fromTracked.length === 0) return doc;
-      const files = [...doc.files, ...fromTracked];
-      return {
-        ...doc,
-        files,
-        desc: `${files.length} fichier${files.length > 1 ? "s" : ""}`,
-        status: deriveFolderStatus(files),
-        lastModif:
-          files.length > 0
-            ? (files[files.length - 1]?.lastModif ?? doc.lastModif)
-            : doc.lastModif,
-        lastModifBy:
-          files.length > 0
-            ? (files[files.length - 1]?.lastModifBy ?? doc.lastModifBy)
-            : doc.lastModifBy,
-      };
-    })
-  );
-  return mergedDocs;
-}
-
-const ETUDE_DOCS_INIT: DocData[] = [
-  {
-    name: "Avant-Projet Sommaire (APS)",
-    desc: "3 fichiers",
-    type: "pdf",
-    date: "12 Jan 2024",
-    status: "valide",
-    lastModif: "12 Jan 2024",
-    lastModifBy: "Ibrahim M.",
-    files: [
-      {
-        name: "Rapport_General_v2.pdf",
-        size: "12.4 MB",
-        type: "pdf",
-        status: "valide",
-        lastModif: "12 Jan 2024",
-        lastModifBy: "Ibrahim M.",
-      },
-      {
-        name: "Plans_Architecturaux.dwg",
-        size: "45.2 MB",
-        type: "dwg",
-        status: "valide",
-        lastModif: "10 Jan 2024",
-        lastModifBy: "Topo Services",
-      },
-      {
-        name: "Annexes_Etude_Impact.zip",
-        size: "108 MB",
-        type: "zip",
-        status: "encours",
-        lastModif: "11 Jan 2024",
-        lastModifBy: "Amadou K.",
-      },
-    ],
-  },
-  {
-    name: "Avant-Projet Détaillé (APD)",
-    desc: "1 fichier",
-    type: "pdf",
-    date: "20 Jan 2024",
-    status: "encours",
-    lastModif: "18 Jan 2024",
-    lastModifBy: "Amadou K.",
-    files: [
-      {
-        name: "APD_Complet_v2.pdf",
-        size: "28 MB",
-        type: "pdf",
-        status: "encours",
-        lastModif: "18 Jan 2024",
-        lastModifBy: "Amadou K.",
-      },
-    ],
-  },
-  {
-    name: "Budget Prévisionnel",
-    desc: "1 fichier",
-    type: "xls",
-    date: "25 Jan 2024",
-    status: "encours",
-    lastModif: "22 Jan 2024",
-    lastModifBy: "EDC Finance",
-    files: [
-      {
-        name: "Budget_Prev_v2.1.xlsx",
-        size: "3.2 MB",
-        type: "xls",
-        status: "encours",
-        lastModif: "22 Jan 2024",
-        lastModifBy: "EDC Finance",
-      },
-    ],
-  },
-  {
-    name: "Étude de faisabilité",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "01 Fév 2024",
-    status: "manquant",
-    files: [],
-  },
-  {
-    name: "Pièces graphiques",
-    desc: "2 fichiers",
-    type: "plan",
-    date: "15 Fév 2024",
-    status: "encours",
-    lastModif: "10 Fév 2024",
-    lastModifBy: "Topo Services",
-    files: [
-      {
-        name: "Plan_Masse_v3.dwg",
-        size: "52 MB",
-        type: "dwg",
-        status: "valide",
-        lastModif: "08 Fév 2024",
-        lastModifBy: "Topo Services",
-      },
-      {
-        name: "Coupes_Techniques.pdf",
-        size: "15 MB",
-        type: "pdf",
-        status: "encours",
-        lastModif: "10 Fév 2024",
-        lastModifBy: "Topo Services",
-      },
-    ],
-  },
-];
-
-const PASSATION_DOCS_INIT: DocData[] = [
-  {
-    name: "DAO",
-    desc: "2 fichiers",
-    type: "pdf",
-    date: "10 Mar 2024",
-    status: "valide",
-    lastModif: "08 Mar 2024",
-    lastModifBy: "Cellule Passation",
-    files: [
-      {
-        name: "DAO_Principal.pdf",
-        size: "18 MB",
-        type: "pdf",
-        status: "valide",
-        lastModif: "08 Mar 2024",
-        lastModifBy: "Cellule Passation",
-      },
-      {
-        name: "DAO_Annexes.pdf",
-        size: "12 MB",
-        type: "pdf",
-        status: "valide",
-        lastModif: "07 Mar 2024",
-        lastModifBy: "Cellule Passation",
-      },
-    ],
-  },
-  {
-    name: "Avis d'appel d'offres",
-    desc: "1 fichier",
-    type: "doc",
-    date: "15 Mar 2024",
-    status: "encours",
-    lastModif: "12 Mar 2024",
-    lastModifBy: "Communication",
-    files: [
-      {
-        name: "AAO_Publication.pdf",
-        size: "2.1 MB",
-        type: "pdf",
-        status: "encours",
-        lastModif: "12 Mar 2024",
-        lastModifBy: "Communication",
-      },
-    ],
-  },
-  {
-    name: "PV d'attribution",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "10 Mai 2024",
-    status: "manquant",
-    files: [],
-  },
-  {
-    name: "Contrat signé",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "15 Jun 2024",
-    status: "manquant",
-    files: [],
-  },
-];
-
-const EXECUTION_DOCS_INIT: DocData[] = [
-  {
-    name: "Contrats / Notifications",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "—",
-    status: "manquant",
-    files: [],
-  },
-  {
-    name: "Ordre de Service",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "—",
-    status: "manquant",
-    files: [],
-  },
-  {
-    name: "PV / Exécution",
-    desc: "Aucun fichier",
-    type: "pdf",
-    date: "—",
-    status: "manquant",
-    files: [],
-  },
-  {
-    name: "Décomptes / Factures",
-    desc: "Aucun fichier",
-    type: "xls",
-    date: "—",
-    status: "manquant",
-    files: [],
-  },
-];
 
 const DEFAULT_PROJECT = {
   id: "PRJ-2008-001",
@@ -685,6 +418,65 @@ export default function ProjectConfigPage() {
     loadProject();
   }, [projectId]);
   
+  const [currentComp, setCurrentComp] = useState<string | null>(
+    PROJECT.components[0]?.id || null,
+  );
+  const [currentSComp, setCurrentSComp] = useState<string | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<
+    "etude" | "passation" | "execution"
+  >("etude");
+  const [selectedActivity, setSelectedActivity] = useState<ActivityData | null>(
+    null,
+  );
+
+  // Déterminer le niveau le plus bas (où afficher les 3 phases)
+  const lowestLevel = useMemo(() => {
+    if (!currentComp) return "global"; // Étude globale
+    
+    const comp = PROJECT.components.find((c) => c.id === currentComp);
+    if (!comp) return "component";
+    
+    // Si la composante a des sous-composantes
+    if (comp.sousComposants && comp.sousComposants.length > 0) {
+      if (!currentSComp) return "component"; // On est au niveau composante (pas le plus bas)
+      
+      const sc = comp.sousComposants.find((s) => s.id === currentSComp);
+      if (!sc) return "subcomponent";
+      
+      // Si le sous-composant a des activités
+      if (sc.activities && sc.activities.length > 0) {
+        // Le niveau le plus bas est "activity", pas "subcomponent"
+        // Donc si on n'a pas sélectionné d'activité, on n'est PAS au niveau le plus bas
+        if (!selectedActivity) return "not-lowest"; // Pas le niveau le plus bas
+        return "activity"; // On est au niveau le plus bas
+      }
+      // Pas d'activités → le niveau le plus bas est "subcomponent"
+      return "subcomponent";
+    }
+    
+    // Pas de sous-composantes → le niveau le plus bas est "component"
+    return "component";
+  }, [currentComp, currentSComp, selectedActivity, PROJECT.components]);
+
+  // Calculer le contexte actuel basé sur la navigation
+  const context = useMemo(() => {
+    if (selectedActivity) {
+      // Niveau activité: composante/sous-composante/activite
+      const activityName = selectedActivity.name.toLowerCase().replace(/\s+/g, '-');
+      return `${currentComp}/${currentSComp}/${activityName}`;
+    }
+    if (currentSComp) {
+      // Niveau sous-composante: composante/sous-composante
+      return `${currentComp}/${currentSComp}`;
+    }
+    if (currentComp) {
+      // Niveau composante: composante
+      return currentComp;
+    }
+    // Niveau global
+    return "global";
+  }, [currentComp, currentSComp, selectedActivity]);
+
   const [activeTab, setActiveTab] = useState<
     "etude" | "structure" | "planning"
   >("etude");
@@ -736,45 +528,76 @@ export default function ProjectConfigPage() {
     name: string;
   } | null>(null);
 
-  // GED document state (mutable) — réhydraté depuis le store suivi au montage
-  const [etudeDocs, setEtudeDocs] = useState<DocData[]>(ETUDE_DOCS_INIT);
-  const [passationDocs, setPassationDocs] =
-    useState<DocData[]>(PASSATION_DOCS_INIT);
-  const [executionDocs, setExecutionDocs] =
-    useState<DocData[]>(EXECUTION_DOCS_INIT);
+  // GED document state (mutable) — chargé depuis le backend
+  const [etudeDocs, setEtudeDocs] = useState<DocData[]>([]);
+  const [passationDocs, setPassationDocs] = useState<DocData[]>([]);
+  const [executionDocs, setExecutionDocs] = useState<DocData[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
 
-  const getInitDocs = () => {
-    if (isLomPangar(PROJECT.id)) {
-      return {
-        etude: ETUDE_DOCS_INIT,
-        passation: PASSATION_DOCS_INIT,
-        execution: EXECUTION_DOCS_INIT,
-      };
-    }
-    return {
-      etude: EMPTY_ETUDE_DOCS as DocData[],
-      passation: EMPTY_PASSATION_DOCS as DocData[],
-      execution: EMPTY_EXECUTION_DOCS as DocData[],
-    };
-  };
-
+  // Charger les documents depuis le backend
   useEffect(() => {
     if (!PROJECT.id || typeof window === "undefined") return;
     
-    async function loadDocs() {
-      const init = getInitDocs();
-      const [etude, passation, execution] = await Promise.all([
-        mergeTrackedIntoDocs(init.etude, PROJECT.id, "etude"),
-        mergeTrackedIntoDocs(init.passation, PROJECT.id, "passation"),
-        mergeTrackedIntoDocs(init.execution, PROJECT.id, "execution"),
-      ]);
-      setEtudeDocs(etude);
-      setPassationDocs(passation);
-      setExecutionDocs(execution);
+    async function loadDocsFromBackend() {
+      setIsLoadingDocs(true);
+      try {
+        const [etudeTracked, passationTracked, executionTracked] = await Promise.all([
+          getTrackedDocumentsLatest(PROJECT.id, "etude", undefined, context),
+          getTrackedDocumentsLatest(PROJECT.id, "passation", undefined, context),
+          getTrackedDocumentsLatest(PROJECT.id, "execution", undefined, context),
+        ]);
+
+        // Grouper les documents par dossier
+        const groupByFolder = (docs: TrackedDocument[]): DocData[] => {
+          const folderMap = new Map<string, FileData[]>();
+          
+          docs.forEach((doc) => {
+            const files = folderMap.get(doc.folderName) || [];
+            files.push({
+              name: doc.fileName,
+              size: doc.fileSize || "0 KB",
+              type: (["pdf", "dwg", "zip", "xls", "doc"].includes(doc.fileType || "")
+                ? doc.fileType
+                : "pdf") as FileData["type"],
+              status: (doc.status === "valide"
+                ? "valide"
+                : doc.status === "rejete"
+                  ? "manquant"
+                  : "encours") as FileStatus,
+              lastModif: formatUploadDate(doc.createdAt || new Date().toISOString()),
+              lastModifBy: doc.uploadedBy,
+              trackingId: doc._id,
+              version: doc.version || 1,
+              rejectionReason: doc.tracking?.rejectionReason,
+            });
+            folderMap.set(doc.folderName, files);
+          });
+
+          return Array.from(folderMap.entries()).map(([folderName, files]) => ({
+            name: folderName,
+            desc: `${files.length} fichier${files.length > 1 ? "s" : ""}`,
+            type: "folder" as const,
+            date: files[0]?.lastModif || todayStr(),
+            status: deriveFolderStatus(files),
+            files,
+            lastModif: files.length > 0 ? files[files.length - 1]?.lastModif : undefined,
+            lastModifBy: files.length > 0 ? files[files.length - 1]?.lastModifBy : undefined,
+          }));
+        };
+
+        setEtudeDocs(groupByFolder(etudeTracked));
+        setPassationDocs(groupByFolder(passationTracked));
+        setExecutionDocs(groupByFolder(executionTracked));
+      } catch (error) {
+        console.error("Erreur lors du chargement des documents:", error);
+        toast.error("Erreur lors du chargement des documents");
+      } finally {
+        setIsLoadingDocs(false);
+      }
     }
     
-    loadDocs();
-  }, [PROJECT.id]);
+    loadDocsFromBackend();
+  }, [PROJECT.id, context]);
 
   const getPhaseDocsAndSetter = (
     phase: string,
@@ -783,17 +606,6 @@ export default function ProjectConfigPage() {
     if (phase === "passation") return [passationDocs, setPassationDocs];
     return [executionDocs, setExecutionDocs];
   };
-
-  const [currentComp, setCurrentComp] = useState<string | null>(
-    PROJECT.components[0]?.id || null,
-  );
-  const [currentSComp, setCurrentSComp] = useState<string | null>(null);
-  const [currentPhase, setCurrentPhase] = useState<
-    "etude" | "passation" | "execution"
-  >("etude");
-  const [selectedActivity, setSelectedActivity] = useState<ActivityData | null>(
-    null,
-  );
 
   const handleSelectComp = useCallback((id: string) => {
     setCurrentComp(id);
@@ -810,7 +622,7 @@ export default function ProjectConfigPage() {
   }, []);
   const handleSelectActivity = useCallback((act: ActivityData) => {
     setSelectedActivity(act);
-    setCurrentPhase("passation");
+    setCurrentPhase("etude"); // Commencer par Étude au lieu de Passation
     setExpandedRows([]);
   }, []);
 
@@ -883,7 +695,7 @@ export default function ProjectConfigPage() {
   };
 
   // ── FILE UPLOAD & FOLDER HANDLER ──
-  const handleCreateFolder = () => {
+  const handleCreateFolder = async () => {
     if (!createFolderModal || !newFolderName.trim()) return;
     const [docs, setter] = getPhaseDocsAndSetter(createFolderModal.phase);
 
@@ -905,37 +717,35 @@ export default function ProjectConfigPage() {
     setUploadTarget({ phase, docIdx });
     fileInputRef.current?.click();
   };
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || !uploadTarget) return;
     const [docs, setter] = getPhaseDocsAndSetter(uploadTarget.phase);
     const folderName = docs[uploadTarget.docIdx]?.name || "Dossier";
-    const newFiles: FileData[] = Array.from(selectedFiles).map((f) => {
-      const sizeStr = formatFileSize(f.size);
-      const ext = getFileExt(f.name);
-      const tracked = addTrackedDocument({
-        projectId: PROJECT.id,
-        phase: uploadTarget.phase,
-        folderName,
-        fileName: f.name,
-        fileSize: sizeStr,
-        fileType: ext,
-        uploadDate: new Date().toISOString(),
-        uploadedBy: "Chef de Projet",
-      });
-      return {
-        name: f.name,
-        size: sizeStr,
-        type: ext,
-        status: "encours" as FileStatus,
-        lastModif: todayStr(),
-        lastModifBy: "Chef de Projet",
-        file: f,
-        blobUrl: URL.createObjectURL(f),
-        trackingId: tracked.id,
-        version: tracked.version,
-      };
-    });
+    const newFiles: FileData[] = await Promise.all(
+      Array.from(selectedFiles).map(async (f) => {
+        const sizeStr = formatFileSize(f.size);
+        const ext = getFileExt(f.name);
+        const tracked = await addTrackedDocument(f, {
+          projectId: PROJECT.id,
+          phase: uploadTarget.phase,
+          folderName,
+          context: context,
+        });
+        return {
+          name: f.name,
+          size: sizeStr,
+          type: ext,
+          status: "encours" as FileStatus,
+          lastModif: todayStr(),
+          lastModifBy: "Chef de Projet",
+          file: f,
+          blobUrl: URL.createObjectURL(f),
+          trackingId: tracked._id,
+          version: tracked.version || 1,
+        };
+      })
+    );
     setter((prev) =>
       prev.map((doc, i) => {
         if (i !== uploadTarget.docIdx) return doc;
@@ -958,30 +768,43 @@ export default function ProjectConfigPage() {
   };
 
   // ── FILE ACTIONS (state-mutating) ──
-  const handleValidateFile = (
+  const handleValidateFile = async (
     phase: string,
     docIdx: number,
     fileIdx: number,
   ) => {
     const [docs, setter] = getPhaseDocsAndSetter(phase);
     const file = docs[docIdx]?.files[fileIdx];
-    if (file?.trackingId) markTrackedDocumentApproved(file.trackingId);
-    if (file?.name) toast.success(`Fichier validé : ${file.name}`);
-    setter((prev) =>
-      prev.map((doc, di) => {
-        if (di !== docIdx) return doc;
-        const updatedFiles = doc.files.map((f, fi) =>
-          fi === fileIdx ? { ...f, status: "valide" as FileStatus } : f,
-        );
-        return {
-          ...doc,
-          files: updatedFiles,
-          status: deriveFolderStatus(updatedFiles),
-        };
-      }),
-    );
+    
+    if (!file?.trackingId) {
+      toast.error("Impossible de valider ce fichier");
+      return;
+    }
+
+    try {
+      await markTrackedDocumentApproved(file.trackingId);
+      if (file?.name) toast.success(`Fichier validé : ${file.name}`);
+      
+      setter((prev) =>
+        prev.map((doc, di) => {
+          if (di !== docIdx) return doc;
+          const updatedFiles = doc.files.map((f, fi) =>
+            fi === fileIdx ? { ...f, status: "valide" as FileStatus } : f,
+          );
+          return {
+            ...doc,
+            files: updatedFiles,
+            status: deriveFolderStatus(updatedFiles),
+          };
+        }),
+      );
+    } catch (error) {
+      console.error("Erreur lors de la validation:", error);
+      toast.error("Erreur lors de la validation du fichier");
+    }
   };
-  const handleRejectFile = (
+
+  const handleRejectFile = async (
     phase: string,
     docIdx: number,
     fileIdx: number,
@@ -989,33 +812,44 @@ export default function ProjectConfigPage() {
   ) => {
     const [docs, setter] = getPhaseDocsAndSetter(phase);
     const file = docs[docIdx]?.files[fileIdx];
-    if (file?.trackingId)
-      rejectTrackedDocumentWithReason(file.trackingId, reason);
-    if (file?.name) toast.info(`Fichier rejeté : ${file.name}`);
-    setter((prev) =>
-      prev.map((doc, di) => {
-        if (di !== docIdx) return doc;
-        const updatedFiles = doc.files.map((f, fi) =>
-          fi === fileIdx
-            ? { ...f, status: "manquant" as FileStatus, rejectionReason: reason }
-            : f,
-        );
-        return {
-          ...doc,
-          files: updatedFiles,
-          status: deriveFolderStatus(updatedFiles),
-        };
-      }),
-    );
+    
+    if (!file?.trackingId) {
+      toast.error("Impossible de rejeter ce fichier");
+      return;
+    }
+
+    try {
+      await rejectTrackedDocumentWithReason(file.trackingId, reason);
+      if (file?.name) toast.info(`Fichier rejeté : ${file.name}`);
+      
+      setter((prev) =>
+        prev.map((doc, di) => {
+          if (di !== docIdx) return doc;
+          const updatedFiles = doc.files.map((f, fi) =>
+            fi === fileIdx
+              ? { ...f, status: "manquant" as FileStatus, rejectionReason: reason }
+              : f,
+          );
+          return {
+            ...doc,
+            files: updatedFiles,
+            status: deriveFolderStatus(updatedFiles),
+          };
+        }),
+      );
+    } catch (error) {
+      console.error("Erreur lors du rejet:", error);
+      toast.error("Erreur lors du rejet du fichier");
+    }
   };
-  const handleDeleteDocFolder = (phase: string, docIdx: number) => {
+  const handleDeleteDocFolder = async (phase: string, docIdx: number) => {
     const [docs, setter] = getPhaseDocsAndSetter(phase);
     const docToDelete = docs[docIdx];
     
     // Check if it has files
     if (docToDelete.files && docToDelete.files.length > 0) {
-        toast.error(`Impossible de supprimer le dossier "${docToDelete.name}" car il contient des fichiers. Videz-le d'abord.`);
-        return;
+      toast.error(`Impossible de supprimer le dossier "${docToDelete.name}" car il contient des fichiers. Videz-le d'abord.`);
+      return;
     }
     
     setConfirmDeleteFolder({ phase, docIdx, name: docToDelete.name });
@@ -1028,7 +862,8 @@ export default function ProjectConfigPage() {
       toast.info(`Dossier supprimé : ${confirmDeleteFolderState.name}`);
     }
   };
-  const handleDeleteFileToTrash = (
+
+  const handleDeleteFileToTrash = async (
     phase: string,
     docIdx: number,
     fileIdx: number,
@@ -1037,27 +872,37 @@ export default function ProjectConfigPage() {
     const [docs, setter] = getPhaseDocsAndSetter(phase);
     const doc = docs[docIdx];
     const file = doc?.files[fileIdx];
-    if (file?.trackingId) moveTrackedDocumentToTrash(file.trackingId, reason);
-    else if (doc && file)
-      removeTrackedDocumentByFile(PROJECT.id, phase, doc.name, file.name);
-    if (file?.name) toast.info(`Fichier déplacé en corbeille : ${file.name}`);
-    setter((prev) =>
-      prev.map((docRow, di) => {
-        if (di !== docIdx) return docRow;
-        const updatedFiles = docRow.files.filter((_, fi) => fi !== fileIdx);
-        return {
-          ...docRow,
-          files: updatedFiles,
-          desc:
-            updatedFiles.length > 0
-              ? `${updatedFiles.length} fichier${updatedFiles.length > 1 ? "s" : ""}`
-              : "Aucun fichier",
-          status: deriveFolderStatus(updatedFiles),
-        };
-      }),
-    );
+    
+    if (!file?.trackingId) {
+      toast.error("Impossible de déplacer ce fichier en corbeille");
+      return;
+    }
+
+    try {
+      await moveTrackedDocumentToTrash(file.trackingId, reason);
+      if (file?.name) toast.info(`Fichier déplacé en corbeille : ${file.name}`);
+      
+      setter((prev) =>
+        prev.map((docRow, di) => {
+          if (di !== docIdx) return docRow;
+          const updatedFiles = docRow.files.filter((_, fi) => fi !== fileIdx);
+          return {
+            ...docRow,
+            files: updatedFiles,
+            desc:
+              updatedFiles.length > 0
+                ? `${updatedFiles.length} fichier${updatedFiles.length > 1 ? "s" : ""}`
+                : "Aucun fichier",
+            status: deriveFolderStatus(updatedFiles),
+          };
+        }),
+      );
+    } catch (error) {
+      console.error("Erreur lors du déplacement en corbeille:", error);
+      toast.error("Erreur lors du déplacement en corbeille");
+    }
   };
-  const handleRollbackValidation = (
+  const handleRollbackValidation = async (
     phase: string,
     docIdx: number,
     fileIdx: number,
@@ -1065,8 +910,10 @@ export default function ProjectConfigPage() {
     const [docs, setter] = getPhaseDocsAndSetter(phase);
     const file = docs[docIdx]?.files[fileIdx];
     if (!file?.trackingId) return;
-    const newVersion = rollbackApprovalWithNewVersion(file.trackingId);
-    if (!newVersion) return;
+    
+    // Pour annuler une validation, on rejette puis on remet en cours
+    // Note: Le backend ne supporte pas directement le rollback, 
+    // donc on change juste le statut côté frontend
     setter((prev) =>
       prev.map((doc, di) => {
         if (di !== docIdx) return doc;
@@ -1075,8 +922,6 @@ export default function ProjectConfigPage() {
             ? {
                 ...f,
                 status: "encours" as FileStatus,
-                trackingId: newVersion.id,
-                version: newVersion.version,
                 lastModif: todayStr(),
               }
             : f,
@@ -1088,23 +933,46 @@ export default function ProjectConfigPage() {
         };
       }),
     );
-    toast.success(`Nouvelle version créée pour ${file.name}`);
+    toast.success(`Validation annulée pour ${file.name}`);
   };
-  const handlePreviewFile = (file: FileData) => {
+  const handlePreviewFile = async (file: FileData) => {
     if (file.blobUrl) {
       setPreviewFile({ url: file.blobUrl, name: file.name, type: file.type });
+    } else if (file.trackingId) {
+      // Télécharger le fichier depuis le backend pour prévisualisation
+      try {
+        toast.info("Chargement du fichier...");
+        // Note: Pour l'instant, on affiche juste un message
+        // TODO: Implémenter la prévisualisation depuis le backend
+        toast.info(`Prévisualisation de "${file.name}" (fonctionnalité à venir)`);
+      } catch (error) {
+        console.error("Erreur lors du chargement du fichier:", error);
+        toast.error("Erreur lors du chargement du fichier");
+      }
     } else {
-      toast.info(`Aucun fichier réel pour "${file.name}" (donnée fictive).`);
+      toast.info(`Aucun fichier réel pour "${file.name}".`);
     }
   };
-  const handleDownloadFile = (file: FileData) => {
+
+  const handleDownloadFile = async (file: FileData) => {
     if (file.blobUrl) {
       const a = document.createElement("a");
       a.href = file.blobUrl;
       a.download = file.name;
       a.click();
+    } else if (file.trackingId) {
+      // Télécharger depuis le backend
+      try {
+        toast.info("Téléchargement en cours...");
+        // Note: Pour l'instant, on affiche juste un message
+        // TODO: Implémenter le téléchargement depuis le backend
+        toast.info(`Téléchargement de "${file.name}" (fonctionnalité à venir)`);
+      } catch (error) {
+        console.error("Erreur lors du téléchargement:", error);
+        toast.error("Erreur lors du téléchargement");
+      }
     } else {
-      toast.info(`Aucun fichier réel pour "${file.name}" (donnée fictive).`);
+      toast.info(`Aucun fichier réel pour "${file.name}".`);
     }
   };
 
@@ -1214,6 +1082,18 @@ export default function ProjectConfigPage() {
       gridTemplateColumns:
         "minmax(250px,2.5fr) 100px minmax(120px,1.5fr) 130px",
     };
+    
+    if (isLoadingDocs) {
+      return (
+        <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden shadow-[var(--shadow-sm)] p-8">
+          <div className="flex items-center justify-center gap-3">
+            <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-[var(--text-secondary)]">Chargement des documents...</span>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden shadow-[var(--shadow-sm)]">
         {/* Header */}
@@ -1239,11 +1119,13 @@ export default function ProjectConfigPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowTrashModal({ phase })}
+              onClick={async () => {
+                const trashed = await getTrashedDocuments(PROJECT.id, phase, context);
+                setShowTrashModal({ phase });
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] transition-colors border border-[var(--border-default)] shadow-sm"
             >
-              <Trash2 size={13} /> Corbeille (
-              {getTrashedDocuments(PROJECT.id, phase).length})
+              <Trash2 size={13} /> Corbeille
             </button>
             <button
               onClick={() => setCreateFolderModal({ phase })}
@@ -1264,10 +1146,21 @@ export default function ProjectConfigPage() {
           <span></span>
         </div>
         {/* Rows */}
-        {docs.map((doc, idx) => {
-          const isExpanded = expandedRows.includes(idx);
-          const hasFiles = doc.files.length > 0;
-          return (
+        {docs.length === 0 ? (
+          <div className="p-8 text-center">
+            <FolderOpen size={48} className="mx-auto text-[var(--text-tertiary)] mb-3 opacity-50" />
+            <p className="text-sm text-[var(--text-secondary)] font-medium mb-1">
+              Aucun dossier pour cette phase
+            </p>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              Créez un nouveau dossier pour commencer à organiser vos documents
+            </p>
+          </div>
+        ) : (
+          docs.map((doc, idx) => {
+            const isExpanded = expandedRows.includes(idx);
+            const hasFiles = doc.files.length > 0;
+            return (
             <div key={idx}>
               {/* ── FOLDER ROW ── */}
               <div
@@ -1426,7 +1319,8 @@ export default function ProjectConfigPage() {
               )}
             </div>
           );
-        })}
+        })
+        )}
       </div>
     );
   };
@@ -1651,7 +1545,14 @@ export default function ProjectConfigPage() {
 
   const TrashModal = () => {
     if (!showTrashModal) return null;
-    const items = getTrashedDocuments(PROJECT.id, showTrashModal.phase);
+    const [items, setItems] = React.useState<any[]>([]);
+    
+    React.useEffect(() => {
+      if (showTrashModal) {
+        getTrashedDocuments(PROJECT.id, showTrashModal.phase, context).then(setItems);
+      }
+    }, [showTrashModal]);
+    
     return (
       <div
         className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
@@ -1667,12 +1568,12 @@ export default function ProjectConfigPage() {
           <div className="space-y-2">
             {items.map((d) => (
               <div
-                key={d.id}
+                key={d._id}
                 className="flex items-center justify-between border border-[var(--border-default)] rounded-[var(--radius-md)] px-3 py-2"
               >
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                    {d.fileName} • v{d.version}
+                    {d.fileName} • v{d.currentVersion || 1}
                   </div>
                   <div className="text-[10px] text-[var(--text-tertiary)] truncate">
                     Motif corbeille : {d.trashReason || "—"}
@@ -1681,9 +1582,10 @@ export default function ProjectConfigPage() {
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     type="button"
-                    onClick={() => {
-                      restoreTrackedDocumentFromTrash(d.id);
-                      setShowTrashModal({ phase: showTrashModal.phase });
+                    onClick={async () => {
+                      await restoreTrackedDocumentFromTrash(d._id);
+                      const updated = await getTrashedDocuments(PROJECT.id, showTrashModal.phase, context);
+                      setItems(updated);
                       toast.success("Document restauré");
                     }}
                     className="px-2.5 py-1 text-[11px] font-semibold border border-[var(--border-default)] rounded-[var(--radius-sm)]"
@@ -1694,7 +1596,7 @@ export default function ProjectConfigPage() {
                     type="button"
                     onClick={() => {
                       setShowPermanentDeleteModal({
-                        docId: d.id,
+                        docId: d._id,
                         fileName: d.fileName,
                       });
                       setReasonInput("");
@@ -1939,71 +1841,83 @@ export default function ProjectConfigPage() {
         {/* LEFT PANEL — Only when a component is selected */}
         {currentComp && comp && (
           <div className="w-[240px] bg-[var(--bg-surface)] border-r border-[var(--border-default)] overflow-y-auto flex-shrink-0 py-5">
-            <div className="px-5 mb-3 text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">
-              Sous-composants
-            </div>
-            <div className="mb-1">
-              {comp.sousComposants.map((s) => (
-                <div
-                  key={s.id}
-                  onClick={() => handleSelectSComp(s.id)}
-                  className={`flex items-center gap-3 px-5 py-2 cursor-pointer border-l-[3px] transition-all text-[13px] ${currentSComp === s.id ? "bg-[var(--accent-subtle)] border-[var(--accent)] text-[var(--accent)] font-bold" : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"}`}
-                >
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${currentSComp === s.id ? "bg-[var(--accent)]" : "bg-[var(--text-tertiary)]"}`}
-                  />
-                  {s.name}
+            {/* Afficher les sous-composants seulement s'il y en a */}
+            {comp.sousComposants && comp.sousComposants.length > 0 && (
+              <>
+                <div className="px-5 mb-3 text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">
+                  Sous-composants
                 </div>
-              ))}
-              <button
-                onClick={() =>
-                  alert(`Ajouter un sous-composant à ${comp.name}`)
-                }
-                className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
-              >
-                <Plus size={12} /> Ajouter
-              </button>
-            </div>
-            <div className="h-px bg-[var(--border-subtle)] mx-5 mb-4" />
-            <div className="px-5 mb-2 text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">
-              {currentSComp && sc ? `Activités — ${sc.name}` : "Activités"}
-            </div>
-            {currentSComp && sc ? (
-              <div>
-                {sc.activities.map((a, idx) => {
-                  const dotColor =
-                    a.pct === 100
-                      ? "bg-green-500"
-                      : a.pct > 0
-                        ? "bg-blue-500"
-                        : "bg-[var(--text-tertiary)]";
-                  const isSelected = selectedActivity?.name === a.name;
-                  return (
+                <div className="mb-1">
+                  {comp.sousComposants.map((s) => (
                     <div
-                      key={idx}
-                      onClick={() => handleSelectActivity(a)}
-                      className={`flex items-center gap-3 px-5 py-2 cursor-pointer transition-colors text-[13px] ${isSelected ? "text-[var(--accent)] font-semibold bg-[var(--accent-subtle)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"}`}
+                      key={s.id}
+                      onClick={() => handleSelectSComp(s.id)}
+                      className={`flex items-center gap-3 px-5 py-2 cursor-pointer border-l-[3px] transition-all text-[13px] ${currentSComp === s.id ? "bg-[var(--accent-subtle)] border-[var(--accent)] text-[var(--accent)] font-bold" : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"}`}
                     >
                       <div
-                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`}
+                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${currentSComp === s.id ? "bg-[var(--accent)]" : "bg-[var(--text-tertiary)]"}`}
                       />
-                      <span className="truncate flex-1">{a.name}</span>
-                      <span className="text-[10px] font-bold text-[var(--text-tertiary)]">
-                        {a.pct}%
-                      </span>
+                      {s.name}
                     </div>
-                  );
-                })}
-                <button
-                  onClick={() => alert(`Ajouter une activité à ${sc.name}`)}
-                  className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
-                >
-                  <Plus size={12} /> Ajouter une activité
-                </button>
-              </div>
-            ) : (
+                  ))}
+                  <button
+                    onClick={() =>
+                      alert(`Ajouter un sous-composant à ${comp.name}`)
+                    }
+                    className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
+                  >
+                    <Plus size={12} /> Ajouter
+                  </button>
+                </div>
+                <div className="h-px bg-[var(--border-subtle)] mx-5 mb-4" />
+              </>
+            )}
+            
+            {/* Afficher les activités seulement si on a un sous-composant sélectionné ET qu'il a des activités */}
+            {currentSComp && sc && sc.activities && sc.activities.length > 0 && (
+              <>
+                <div className="px-5 mb-2 text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">
+                  Activités — {sc.name}
+                </div>
+                <div>
+                  {sc.activities.map((a, idx) => {
+                    const dotColor =
+                      a.pct === 100
+                        ? "bg-green-500"
+                        : a.pct > 0
+                          ? "bg-blue-500"
+                          : "bg-[var(--text-tertiary)]";
+                    const isSelected = selectedActivity?.name === a.name;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectActivity(a)}
+                        className={`flex items-center gap-3 px-5 py-2 cursor-pointer transition-colors text-[13px] ${isSelected ? "text-[var(--accent)] font-semibold bg-[var(--accent-subtle)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"}`}
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`}
+                        />
+                        <span className="truncate flex-1">{a.name}</span>
+                        <span className="text-[10px] font-bold text-[var(--text-tertiary)]">
+                          {a.pct}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={() => alert(`Ajouter une activité à ${sc.name}`)}
+                    className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
+                  >
+                    <Plus size={12} /> Ajouter une activité
+                  </button>
+                </div>
+              </>
+            )}
+            
+            {/* Message si pas de sous-composants */}
+            {(!comp.sousComposants || comp.sousComposants.length === 0) && (
               <div className="px-5 text-[11px] text-[var(--text-tertiary)] italic">
-                Sélectionnez un sous-composant
+                Aucun sous-composant
               </div>
             )}
           </div>
@@ -2033,62 +1947,115 @@ export default function ProjectConfigPage() {
           {/* Component selected — Étude du composant (sans SC) */}
           {currentComp && comp && !currentSComp && !selectedActivity && (
             <div className="space-y-4">
-              {/* Phase tabs (Étude only at this level) */}
-              <div className="flex items-center gap-1 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
-                <button className="px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)] cursor-default">
-                  Étude
-                </button>
-              </div>
-              <div className="mb-2 mt-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">Étude — {comp.name}</h2>
-                </div>
-                <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents d&apos;étude du composant. Sélectionnez un sous-composant pour voir son étude spécifique.</p>
-              </div>
-              <LivrablesTable docs={etudeDocs} contextTitle={comp.name} phase="etude" />
+              {/* Si c'est le niveau le plus bas (pas de sous-composantes), afficher les 3 phases */}
+              {lowestLevel === "component" ? (
+                <>
+                  {/* Phase tabs (Étude / Passation / Exécution) */}
+                  <div className="flex items-center gap-1 mb-5 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
+                    <button onClick={() => { setCurrentPhase("etude"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "etude" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Étude</button>
+                    <button onClick={() => { setCurrentPhase("passation"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "passation" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Passation</button>
+                    <button onClick={() => { setCurrentPhase("execution"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "execution" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Exécution</button>
+                  </div>
+                  <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">{currentPhase === "etude" ? "Étude" : currentPhase === "passation" ? "Passation" : "Exécution"} — {comp.name}</h2>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents de {currentPhase} du composant.</p>
+                  </div>
+                  <LivrablesTable 
+                    docs={currentPhase === "etude" ? etudeDocs : currentPhase === "passation" ? passationDocs : executionDocs} 
+                    contextTitle={comp.name} 
+                    phase={currentPhase} 
+                  />
+                </>
+              ) : (
+                <>
+                  {/* Phase tabs (Étude only at this level) */}
+                  <div className="flex items-center gap-1 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
+                    <button className="px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)] cursor-default">
+                      Étude
+                    </button>
+                  </div>
+                  <div className="mb-2 mt-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">Étude — {comp.name}</h2>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents d&apos;étude du composant. Sélectionnez un sous-composant pour voir son étude spécifique.</p>
+                  </div>
+                  <LivrablesTable docs={etudeDocs} contextTitle={comp.name} phase="etude" />
+                </>
+              )}
             </div>
           )}
 
           {/* Sous-composant selected — Étude du SC */}
           {currentComp && currentSComp && sc && !selectedActivity && (
             <div className="space-y-4">
-              {/* Phase tabs (Étude only at this level) */}
-              <div className="flex items-center gap-1 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
-                <button className="px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)] cursor-default">
-                  Étude
-                </button>
-              </div>
-              <div className="mb-2 mt-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">Étude — {sc.name}</h2>
-                </div>
-                <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents d&apos;étude du sous-composant. Cliquez sur une activité pour voir sa passation et son exécution.</p>
-              </div>
-              <LivrablesTable docs={etudeDocs} contextTitle={sc.name} phase="etude" />
+              {/* Si c'est le niveau le plus bas (pas d'activités), afficher les 3 phases */}
+              {lowestLevel === "subcomponent" ? (
+                <>
+                  {/* Phase tabs (Étude / Passation / Exécution) */}
+                  <div className="flex items-center gap-1 mb-5 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
+                    <button onClick={() => { setCurrentPhase("etude"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "etude" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Étude</button>
+                    <button onClick={() => { setCurrentPhase("passation"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "passation" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Passation</button>
+                    <button onClick={() => { setCurrentPhase("execution"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "execution" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Exécution</button>
+                  </div>
+                  <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-6 h-6 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">{currentPhase === "etude" ? "Étude" : currentPhase === "passation" ? "Passation" : "Exécution"} — {sc.name}</h2>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents de {currentPhase} du sous-composant.</p>
+                  </div>
+                  <LivrablesTable 
+                    docs={currentPhase === "etude" ? etudeDocs : currentPhase === "passation" ? passationDocs : executionDocs} 
+                    contextTitle={sc.name} 
+                    phase={currentPhase} 
+                  />
+                </>
+              ) : (
+                <>
+                  {/* Phase tabs (Étude only at this level) */}
+                  <div className="flex items-center gap-1 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
+                    <button className="px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)] cursor-default">
+                      Étude
+                    </button>
+                  </div>
+                  <div className="mb-2 mt-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-6 h-6 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center flex-shrink-0"><FileText size={13} /></div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">Étude — {sc.name}</h2>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 ml-8">Documents d&apos;étude du sous-composant. Cliquez sur une activité pour voir toutes ses phases.</p>
+                  </div>
+                  <LivrablesTable docs={etudeDocs} contextTitle={sc.name} phase="etude" />
+                </>
+              )}
             </div>
           )}
 
-          {/* Activity selected — Passation & Exécution */}
-          {currentComp && selectedActivity && (
+          {/* Activity selected — Étude / Passation / Exécution */}
+          {currentComp && selectedActivity && lowestLevel === "activity" && (
             <div>
-              <button onClick={() => setSelectedActivity(null)} className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] mb-4 transition-colors"><ChevronLeft size={14} /> Retour à l&apos;étude</button>
+              <button onClick={() => setSelectedActivity(null)} className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] mb-4 transition-colors"><ChevronLeft size={14} /> Retour</button>
 
               {/* Titre simple de l'activité au lieu du gros dashboard */}
               <div className="mb-4">
                   <h2 className="text-lg font-bold text-[var(--text-primary)]">{selectedActivity.name}</h2>
-                  <p className="text-xs text-[var(--text-secondary)]">Gérez les documents de passation et d'exécution pour cette activité.</p>
+                  <p className="text-xs text-[var(--text-secondary)]">Gérez les documents d'étude, de passation et d'exécution pour cette activité.</p>
               </div>
 
-              {/* Passation / Exécution tabs */}
+              {/* Étude / Passation / Exécution tabs */}
               <div className="flex items-center gap-1 mb-5 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] p-1 w-fit shadow-[var(--shadow-sm)]">
+                <button onClick={() => { setCurrentPhase("etude"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "etude" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Étude</button>
                 <button onClick={() => { setCurrentPhase("passation"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "passation" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Passation</button>
                 <button onClick={() => { setCurrentPhase("execution"); setExpandedRows([]); }} className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all ${currentPhase === "execution" ? "bg-[var(--text-primary)] text-[var(--text-inverted)] shadow-[var(--shadow-sm)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"}`}>Exécution</button>
               </div>
 
               <LivrablesTable
-                docs={currentPhase === "passation" ? passationDocs : executionDocs}
+                docs={currentPhase === "etude" ? etudeDocs : currentPhase === "passation" ? passationDocs : executionDocs}
                 contextTitle={selectedActivity.name}
                 phase={currentPhase}
               />

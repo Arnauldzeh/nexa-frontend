@@ -88,7 +88,7 @@ export function UserSessionSwitcher() {
       {showDropdown && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] overflow-hidden">
+          <div className="absolute right-0 bottom-full mb-1 z-50 w-72 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] overflow-hidden">
             <div className="px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-inset)]">
               <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">User Profile</div>
             </div>

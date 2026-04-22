@@ -521,11 +521,11 @@ export default function ProjectConfigPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
-                  {teamAssignments.map((assignment) => {
+                  {teamAssignments.map((assignment, index) => {
                     const user = getUserById(assignment.userId);
                     if (!user) return null;
                     return (
-                      <tr key={assignment.id} className="hover:bg-[var(--bg-surface-hover)] transition-colors">
+                      <tr key={assignment.id || `assignment-${index}`} className="hover:bg-[var(--bg-surface-hover)] transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold">

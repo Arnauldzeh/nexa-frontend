@@ -81,7 +81,7 @@ export default function AlertsPage() {
         onResolve?: (id: string) => void;
     }) => {
         const borderColor = variant === "critical" ? "border-l-red-500" : variant === "warning" ? "border-l-amber-500" : "border-l-green-500";
-        const suiviHref = `/suivi/${alert.projectCode?.toLowerCase() || 'unknown'}`;
+        const suiviHref = `/suivi/${alert.projectId?.toLowerCase() || 'unknown'}`;
 
         if (variant === "resolved") {
             return (
@@ -89,9 +89,9 @@ export default function AlertsPage() {
                     <div>
                         <h3 className="font-semibold text-[var(--text-secondary)] text-[14px]">✓ {alert.title}</h3>
                         <div className="text-[var(--text-tertiary)] text-[12px] flex items-center gap-2 mt-0.5">
-                            <span>{alert.readAt ? formatResolvedDate(alert.readAt) : "—"}</span>
+                            <span>{alert.createdAt ? formatResolvedDate(alert.createdAt) : "—"}</span>
                             <span>·</span>
-                            <span>{alert.projectCode}</span>
+                            <span>{alert.projectId}</span>
                         </div>
                     </div>
                 </div>
@@ -106,7 +106,7 @@ export default function AlertsPage() {
                     </div>
                     <div className="text-[var(--text-secondary)] text-[12px] flex items-center gap-2">
                         <span className="font-mono text-[11px] bg-[var(--bg-inset)] px-1.5 py-0.5 rounded-[var(--radius-sm)] border border-[var(--border-default)]">
-                            {alert.projectCode}
+                            {alert.projectId}
                         </span>
                         <span className="text-[var(--text-tertiary)]">·</span>
                         <span>{alert.message}</span>
@@ -117,7 +117,7 @@ export default function AlertsPage() {
                         <button
                             onClick={(e) => {
                                 e.preventDefault();
-                                onResolve(alert.id);
+                                onResolve(alert._id);
                             }}
                             className="text-[11px] font-medium text-green-600 hover:text-green-700 hover:underline"
                         >
@@ -182,7 +182,7 @@ export default function AlertsPage() {
                         ) : (
                             critical.map((alert) => (
                                 <AlertRow
-                                    key={alert.id}
+                                    key={alert._id}
                                     alert={alert}
                                     variant="critical"
                                     onResolve={handleMarkResolved}
@@ -203,7 +203,7 @@ export default function AlertsPage() {
                         ) : (
                             warning.map((alert) => (
                                 <AlertRow
-                                    key={alert.id}
+                                    key={alert._id}
                                     alert={alert}
                                     variant="warning"
                                     onResolve={handleMarkResolved}
@@ -231,7 +231,7 @@ export default function AlertsPage() {
                                 <p className="text-[12px] text-[var(--text-tertiary)] italic">Aucune alerte résolue.</p>
                             ) : (
                                 resolved.map((alert) => (
-                                    <AlertRow key={alert.id} alert={alert} variant="resolved" />
+                                    <AlertRow key={alert._id} alert={alert} variant="resolved" />
                                 ))
                             )}
                         </div>

@@ -127,7 +127,7 @@ export default function ProjectTeamPage() {
     setEditingAssignment(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.userId || !formData.functionalRole) {
@@ -135,34 +135,56 @@ export default function ProjectTeamPage() {
       return;
     }
 
-    if (editingAssignment) {
-      updateTeamAssignment(editingAssignment.id, formData);
-      toast.success("Affectation modifiée");
-    } else {
-      const newAssignment: TeamAssignment = {
-        id: generateAssignmentId(),
-        projectId,
-        ...formData,
-        assignedAt: new Date().toISOString(),
-        assignedBy: "u1", // Temporaire avant de le cabler au user du session
-      };
-      addTeamAssignment(newAssignment);
-      toast.success("Membre ajouté à l'équipe");
-    }
+    try {
+      if (editingAssignment) {
+        // Pour modifier: supprimer l'ancien et créer un nouveau
+        await removeTeamAssignment(editingAssignment._id);
+        await addTeamAssignment({
+          projectId,
+          userId: formData.userId,
+          functionalRole: formData.functionalRole,
+          projectRole: formData.projectRole,
+          level: formData.level,
+          entityId: formData.entityId,
+          entityName: formData.entityName,
+        });
+        toast.success("Affectation modifiée");
+      } else {
+        await addTeamAssignment({
+          projectId,
+          userId: formData.userId,
+          functionalRole: formData.functionalRole,
+          projectRole: formData.projectRole,
+          level: formData.level,
+          entityId: formData.entityId,
+          entityName: formData.entityName,
+        });
+        toast.success("Membre ajouté à l'équipe");
+      }
 
-    refreshData();
-    handleCloseModal();
+      await refreshData();
+      handleCloseModal();
+    } catch (error) {
+      console.error('Error saving team assignment:', error);
+      toast.error("Erreur lors de l'enregistrement");
+    }
   };
 
   const handleDelete = (id: string, name: string) => {
     setDeleteConfirm({ id, name });
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteConfirm) {
-      removeTeamAssignment(deleteConfirm.id);
-      toast.success("Membre retiré de l'équipe");
-      refreshData();
+      try {
+        await removeTeamAssignment(deleteConfirm.id);
+        toast.success("Membre retiré de l'équipe");
+        await refreshData();
+        setDeleteConfirm(null);
+      } catch (error) {
+        console.error('Error removing team member:', error);
+        toast.error("Erreur lors de la suppression");
+      }
     }
   };
 
@@ -351,26 +373,26 @@ export default function ProjectTeamPage() {
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)]">
               {filteredAssignments.map((assignment) => {
-                const user = getUserById(assignment.userId);
+                const user = allUsers.find(u => u.id === assignment.userId);
                 if (!user) return null;
 
                 return (
                   <tr
-                    key={assignment.id}
+                    key={assignment._id}
                     className="hover:bg-[var(--bg-surface-hover)] transition-colors"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-sm font-bold">
-                          {user.prenom?.[0] || ""}
-                          {user.nom?.[0] || ""}
+                          {user.firstName?.[0] || ""}
+                          {user.lastName?.[0] || ""}
                         </div>
                         <div>
                           <div className="text-sm font-semibold text-[var(--text-primary)]">
-                            {user.prenom} {user.nom}
+                            {user.firstName} {user.lastName}
                           </div>
                           <div className="text-xs text-[var(--text-tertiary)]">
-                            {user.fonction || "—"}
+                            {user.position || "—"}
                           </div>
                         </div>
                       </div>
@@ -405,7 +427,7 @@ export default function ProjectTeamPage() {
                           <Edit2 size={14} />
                         </button>
                         <button
-                          onClick={() => handleDelete(assignment.id, `${user.prenom} ${user.nom}`)}
+                          onClick={() => handleDelete(assignment._id, `${user.firstName} ${user.lastName}`)}
                           className="p-2 text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-500/10 rounded-[var(--radius-md)] transition-colors"
                           title="Retirer"
                         >
@@ -459,10 +481,10 @@ export default function ProjectTeamPage() {
                 >
                   <option value="">Sélectionner un utilisateur</option>
                   {allUsers
-                    .filter((u) => u.statut === "actif")
+                    .filter((u) => u.status === "active")
                     .map((user) => (
                       <option key={user.id} value={user.id}>
-                        {user.prenom} {user.nom} - {user.fonction || "N/A"}
+                        {user.firstName} {user.lastName} - {user.position || "N/A"}
                       </option>
                     ))}
                 </select>

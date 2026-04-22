@@ -98,14 +98,27 @@ export const ACTIVITY_TYPES = [
 
 export type ActivityTypeId = typeof ACTIVITY_TYPES[number]["id"];
 
-// Helper: extract name from activity
-export function getActivityName(act: Activity): string {
-  return act.name;
+// Helper functions for activity names and types
+export function getActivityName(act: string | Activity): string {
+  return typeof act === "string" ? act : act.name;
 }
 
-// Helper: extract type from activity
-export function getActivityType(act: Activity): string {
-  return act.typeActivite;
+export function getActivityType(act: string | Activity): string {
+  return typeof act === "string" ? "travaux" : act.typeActivite;
+}
+
+/**
+ * Determine if a component is at the lowest level (should have typeActivite)
+ */
+export function isComponentLowestLevel(comp: Component): boolean {
+  return !comp.sousComposants || comp.sousComposants.length === 0;
+}
+
+/**
+ * Determine if a sous-composant is at the lowest level (should have typeActivite)
+ */
+export function isSousComposantLowestLevel(sc: SousComposant): boolean {
+  return !sc.activities || sc.activities.length === 0;
 }
 
 // Type aliases for backward compatibility

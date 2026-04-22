@@ -4,11 +4,15 @@
 // ══════════════════════════════════════════════════════════════
 
 import {
-  documentService,
   type DocumentMetadata,
-  type UploadDocumentDto,
-  type RejectDocumentDto,
-  type TrashDocumentDto,
+  uploadDocument,
+  getDocuments,
+  approveDocument,
+  rejectDocument,
+  trashDocument,
+  restoreDocument,
+  deleteDocument,
+  type UploadDocumentParams,
 } from "@/services/api/documentService";
 
 // ── Types for Frontend Compatibility ──
@@ -64,14 +68,16 @@ export async function getTrackedDocuments(
   projectId?: string,
   phase?: string,
   folderName?: string,
+  context?: string,
 ): Promise<TrackedDocument[]> {
   const filters: any = {};
   if (projectId) filters.projectId = projectId;
   if (phase) filters.phase = phase;
+  if (context) filters.context = context;
   // Note: Backend doesn't support folderName filter directly
   // We'll filter on frontend if needed
   
-  const docs = await documentService.getAll(filters);
+  const docs = await getDocuments(filters);
   let result = docs.map(enhanceDocument);
   
   if (folderName) {
@@ -85,8 +91,9 @@ export async function getTrackedDocumentsLatest(
   projectId?: string,
   phase?: string,
   folderName?: string,
+  context?: string,
 ): Promise<TrackedDocument[]> {
-  const docs = await getTrackedDocuments(projectId, phase, folderName);
+  const docs = await getTrackedDocuments(projectId, phase, folderName, context);
   
   // Keep only latest version per lineage
   const latestMap = new Map<string, TrackedDocument>();
@@ -103,12 +110,14 @@ export async function getTrackedDocumentsLatest(
 export async function getTrashedDocuments(
   projectId?: string,
   phase?: string,
+  context?: string,
 ): Promise<TrackedDocument[]> {
   const filters: any = { isTrashed: true };
   if (projectId) filters.projectId = projectId;
   if (phase) filters.phase = phase;
+  if (context) filters.context = context;
   
-  const docs = await documentService.getAll(filters);
+  const docs = await getDocuments(filters);
   return docs.map(enhanceDocument);
 }
 
@@ -116,22 +125,22 @@ export async function getTrashedDocuments(
 
 export async function addTrackedDocument(
   file: File,
-  data: UploadDocumentDto,
+  data: Omit<UploadDocumentParams, 'file'>,
 ): Promise<TrackedDocument> {
-  const doc = await documentService.upload(file, data);
+  const doc = await uploadDocument({ ...data, file });
   return enhanceDocument(doc);
 }
 
 // ── UPDATE (approve/reject) ──
 
 export async function markTrackedDocumentApproved(docId: string): Promise<TrackedDocument> {
-  const doc = await documentService.approve(docId);
+  const doc = await approveDocument(docId);
   return enhanceDocument(doc);
 }
 
 export async function markTrackedDocumentRejected(docId: string): Promise<TrackedDocument> {
   // Note: Backend reject requires a reason
-  const doc = await documentService.reject(docId, { reason: "Rejected" });
+  const doc = await rejectDocument(docId, "Rejected");
   return enhanceDocument(doc);
 }
 
@@ -139,7 +148,7 @@ export async function rejectTrackedDocumentWithReason(
   docId: string,
   reason: string,
 ): Promise<TrackedDocument> {
-  const doc = await documentService.reject(docId, { reason });
+  const doc = await rejectDocument(docId, reason);
   return enhanceDocument(doc);
 }
 
@@ -149,11 +158,11 @@ export async function moveTrackedDocumentToTrash(
   docId: string,
   reason: string,
 ): Promise<void> {
-  await documentService.trash(docId, { reason });
+  await trashDocument(docId, reason);
 }
 
 export async function restoreTrackedDocumentFromTrash(docId: string): Promise<TrackedDocument> {
-  const doc = await documentService.restore(docId);
+  const doc = await restoreDocument(docId);
   return enhanceDocument(doc);
 }
 
@@ -162,11 +171,11 @@ export async function permanentlyDeleteFromTrash(
   reason: string,
 ): Promise<void> {
   // Note: Backend doesn't require reason for permanent delete
-  await documentService.delete(docId);
+  await deleteDocument(docId);
 }
 
 export async function removeTrackedDocument(docId: string): Promise<void> {
-  await documentService.delete(docId);
+  await deleteDocument(docId);
 }
 
 // ── STATS ──
@@ -188,4 +197,4 @@ export async function getFolderTrackingStats(
 }
 
 // Re-export types
-export type { DocumentMetadata, UploadDocumentDto };
+export type { DocumentMetadata, UploadDocumentParams };
