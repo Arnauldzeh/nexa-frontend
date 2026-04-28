@@ -15,6 +15,14 @@ export interface TeamAssignment {
   entityName?: string;
   activeInProject: boolean;
   assignedBy?: string;
+  permissions?: string[];
+  newUserData?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    position: string;
+  };
   createdAt: string;
 }
 
@@ -27,6 +35,14 @@ export interface CreateTeamAssignmentDto {
   entityId?: string;
   entityName?: string;
   assignedBy?: string;
+  permissions?: string[];
+  newUserData?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    position: string;
+  };
 }
 
 export const teamService = {

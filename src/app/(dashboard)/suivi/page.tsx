@@ -54,7 +54,7 @@ async function mapToSuivi(projects: Project[]): Promise<ProjetSuivi[]> {
                 name: p.name,
                 type: p.description || "Projet d'infrastructure",
                 region: p.localisation?.region || "—",
-                budget: p.budget,
+                budget: p.budget ? `${p.budget.toLocaleString()} ${p.devise || 'FCFA'}` : "—",
                 pct: p.progress,
                 alerts: alertCount,
                 composants: p.components.length,

@@ -41,6 +41,3 @@ export async function getAuditLogsByEntity(
   console.warn("Audit logs endpoint not yet implemented");
   return [];
 }
-
-// Re-export types
-export type { AuditLog };

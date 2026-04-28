@@ -108,12 +108,14 @@ export default function PlanificationPage() {
                                 </div>
                             </div>
 
-                            <div className="border-t border-[var(--border-subtle)] px-5 py-3 bg-[var(--bg-inset)]">
-                                <div className="flex items-center justify-center gap-2 text-[11px] font-semibold text-[var(--text-tertiary)] italic">
-                                    <Calendar size={12} />
-                                    Module planification — bientôt disponible
-                                </div>
-                            </div>
+                            <Link
+                                href={`/planification/${project.code}`}
+                                className="border-t border-[var(--border-subtle)] px-5 py-3 bg-[var(--bg-inset)] hover:bg-[var(--bg-surface-hover)] transition-colors flex items-center justify-center gap-2 text-[11px] font-semibold text-[var(--accent)] group/link"
+                            >
+                                <Calendar size={12} />
+                                Planifier ce projet
+                                <ChevronRight size={12} className="group-hover/link:translate-x-0.5 transition-transform" />
+                            </Link>
                         </div>
                     );
                 })}

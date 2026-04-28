@@ -1860,14 +1860,6 @@ export default function ProjectConfigPage() {
                       {s.name}
                     </div>
                   ))}
-                  <button
-                    onClick={() =>
-                      alert(`Ajouter un sous-composant à ${comp.name}`)
-                    }
-                    className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
-                  >
-                    <Plus size={12} /> Ajouter
-                  </button>
                 </div>
                 <div className="h-px bg-[var(--border-subtle)] mx-5 mb-4" />
               </>
@@ -1904,12 +1896,6 @@ export default function ProjectConfigPage() {
                       </div>
                     );
                   })}
-                  <button
-                    onClick={() => alert(`Ajouter une activité à ${sc.name}`)}
-                    className="flex items-center gap-1.5 px-5 py-2 mt-1 text-[11px] font-medium text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors w-full"
-                  >
-                    <Plus size={12} /> Ajouter une activité
-                  </button>
                 </div>
               </>
             )}

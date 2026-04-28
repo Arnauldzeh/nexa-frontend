@@ -7,6 +7,7 @@ import Link from "next/link";
 import { addProject, generateProjectCode, ACTIVITY_TYPES, getActivityName, getActivityType, isComponentLowestLevel, isSousComposantLowestLevel, type ComponentData, type SousComposantData, type ActivityDef } from "@/lib/projectStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CURRENCIES, calculatePercentages, calculateTotalBudget, formatCurrency, DEFAULT_EXCHANGE_RATES } from "@/lib/helpers/currencyHelpers";
 
 type ConfirmState = {
   type: "component" | "subcomponent" | "activity" | "bailleur" | "partie_publique" | "partie_privee";
@@ -419,18 +420,23 @@ export default function NewProjectPage() {
     const [autoDetected, setAutoDetected] = useState(false);
 
     // Step 3 state (financement)
-    const [budget, setBudget] = useState("");
-    const [devise, setDevise] = useState("FCFA");
     const [structureJuridique, setStructureJuridique] = useState<"MOP" | "PPP">("MOP");
     
     // MOP
     const [budgetNational, setBudgetNational] = useState(false);
+    const [budgetNationalMontant, setBudgetNationalMontant] = useState("");
+    const [budgetNationalDevise, setBudgetNationalDevise] = useState("FCFA");
     const [budgetNationalPct, setBudgetNationalPct] = useState("0");
-    const [bailleurs, setBailleurs] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
+    const [bailleurs, setBailleurs] = useState<Array<{ id: string; nom: string; montant: string; devise: string; pourcentage?: number }>>([]);
     
     // PPP
-    const [partiesPubliques, setPartiesPubliques] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
-    const [partiesPrivees, setPartiesPrivees] = useState<Array<{ id: string; nom: string; pourcentage: string }>>([]);
+    const [partiesPubliques, setPartiesPubliques] = useState<Array<{ id: string; nom: string; montant: string; devise: string; pourcentage?: number }>>([]);
+    const [partiesPrivees, setPartiesPrivees] = useState<Array<{ id: string; nom: string; montant: string; devise: string; pourcentage?: number }>>([]);
+
+    // Affichage du budget total
+    const [budgetDisplayMode, setBudgetDisplayMode] = useState<"detailed" | "converted">("detailed");
+    const [conversionCurrency, setConversionCurrency] = useState("FCFA");
+    const [exchangeRates, setExchangeRates] = useState(DEFAULT_EXCHANGE_RATES);
 
     const [confirmState, setConfirmState] = useState<ConfirmState>(null);
 
@@ -489,7 +495,7 @@ export default function NewProjectPage() {
         setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, name } : sc) } : c));
     };
     const addActivity = (compIdx: number, scIdx: number, typeActivite: string = "travaux") => {
-        const newAct: ActivityDef = { name: "", typeActivite };
+        const newAct: ActivityDef = { name: "", typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' };
         setComponents(prev => prev.map((c, ci) => {
             if (ci !== compIdx) return c;
             return {
@@ -504,10 +510,10 @@ export default function NewProjectPage() {
         }));
     };
     const updateActivity = (compIdx: number, scIdx: number, actIdx: number, val: string) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: val, typeActivite: "travaux" } : { ...a, name: val }) : a) } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? { ...a, name: val } : a) } : sc) } : c));
     };
     const updateActivityType = (compIdx: number, scIdx: number, actIdx: number, typeActivite: string) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: a, typeActivite } : { ...a, typeActivite }) : a) } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? { ...a, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : a) } : sc) } : c));
     };
     const removeActivity = (compIdx: number, scIdx: number, actIdx: number) => {
         setConfirmState({
@@ -536,15 +542,15 @@ export default function NewProjectPage() {
 
     // Budget par composant
     const updateComponentBudget = (idx: number, budget: string) => {
-        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget } : c));
+        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget: budget ? parseFloat(budget) : undefined } : c));
     };
 
     // TypeActivite pour composantes et sous-composantes
     const updateComponentType = (idx: number, typeActivite: string) => {
-        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, typeActivite } : c));
+        setComponents(prev => prev.map((c, i) => i === idx ? { ...c, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : c));
     };
     const updateSCType = (compIdx: number, scIdx: number, typeActivite: string) => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, typeActivite } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : sc) } : c));
     };
 
     // ═══ Réordonnancement (même niveau) ═══
@@ -590,7 +596,7 @@ export default function NewProjectPage() {
         setComponents(prev => {
             const comp = prev[ci];
             const sc = comp.sousComposants[si];
-            const newComp: ComponentData = { id: `c${Date.now()}`, name: sc.name, sousComposants: [], budget: "" };
+            const newComp: ComponentData = { id: `c${Date.now()}`, name: sc.name, sousComposants: [] };
             // Si la SC a des activités, on les met comme SCs enfants du nouveau composant
             if (sc.activities.length > 0) {
                 newComp.sousComposants = sc.activities.map((a, idx) => ({ id: `sc${Date.now() + idx + 1}`, name: getActivityName(a), activities: [] }));
@@ -666,7 +672,7 @@ export default function NewProjectPage() {
 
     const handleSelectBailleur = (nom: string) => {
         const id = `b${Date.now()}`;
-        setBailleurs((prev) => [...prev, { id, nom, pourcentage: "0" }]);
+        setBailleurs((prev) => [...prev, { id, nom, montant: "0", devise: "FCFA", pourcentage: 0 }]);
         setBailleurSearch("");
         setBailleurDropdownOpen(false);
     };
@@ -674,14 +680,20 @@ export default function NewProjectPage() {
     const handleAddCustomBailleur = () => {
         if (!customBailleurInput.trim()) return;
         const id = `b${Date.now()}`;
-        setBailleurs((prev) => [...prev, { id, nom: customBailleurInput.trim(), pourcentage: "0" }]);
+        setBailleurs((prev) => [...prev, { id, nom: customBailleurInput.trim(), montant: "0", devise: "FCFA", pourcentage: 0 }]);
         setCustomBailleurInput("");
         setShowCustomBailleurInput(false);
     };
 
     // Helpers pour MOP
+    const updateBailleurMontant = (id: string, montant: string) => {
+        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, montant } : b));
+    };
+    const updateBailleurDevise = (id: string, devise: string) => {
+        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, devise } : b));
+    };
     const updateBailleurPct = (id: string, pct: string) => {
-        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, pourcentage: pct } : b));
+        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, pourcentage: parseFloat(pct) || 0 } : b));
     };
 
     const removeBailleur = (id: string) => {
@@ -695,14 +707,92 @@ export default function NewProjectPage() {
         });
     };
 
+    // Calculer automatiquement les pourcentages des bailleurs (MOP)
+    const calculateBailleurPercentages = () => {
+        const contributions = bailleurs.map(b => ({
+            montant: parseFloat(b.montant) || 0,
+            devise: b.devise
+        }));
+        
+        if (budgetNational) {
+            contributions.push({
+                montant: parseFloat(budgetNationalMontant) || 0,
+                devise: budgetNationalDevise
+            });
+        }
+        
+        const percentages = calculatePercentages(contributions);
+        
+        setBailleurs(prev => prev.map((b, idx) => ({
+            ...b,
+            pourcentage: percentages[idx]
+        })));
+        
+        if (budgetNational && percentages.length > bailleurs.length) {
+            setBudgetNationalPct(percentages[percentages.length - 1].toString());
+        }
+    };
+
+    // Calculer automatiquement les pourcentages PPP
+    const calculatePPPPercentages = () => {
+        const contributions = [
+            ...partiesPubliques.map(p => ({
+                montant: parseFloat(p.montant) || 0,
+                devise: p.devise
+            })),
+            ...partiesPrivees.map(p => ({
+                montant: parseFloat(p.montant) || 0,
+                devise: p.devise
+            }))
+        ];
+        
+        const percentages = calculatePercentages(contributions);
+        
+        setPartiesPubliques(prev => prev.map((p, idx) => ({
+            ...p,
+            pourcentage: percentages[idx]
+        })));
+        
+        setPartiesPrivees(prev => prev.map((p, idx) => ({
+            ...p,
+            pourcentage: percentages[partiesPubliques.length + idx]
+        })));
+    };
+
+    // Recalculer les pourcentages quand les montants changent (MOP)
+    useEffect(() => {
+        if (structureJuridique === "MOP" && (bailleurs.length > 0 || budgetNational)) {
+            calculateBailleurPercentages();
+        }
+    }, [bailleurs.map(b => `${b.montant}-${b.devise}`).join(','), budgetNational, budgetNationalMontant, budgetNationalDevise, structureJuridique]);
+
+    // Recalculer les pourcentages quand les montants changent (PPP)
+    useEffect(() => {
+        if (structureJuridique === "PPP" && (partiesPubliques.length > 0 || partiesPrivees.length > 0)) {
+            calculatePPPPercentages();
+        }
+    }, [
+        partiesPubliques.map(p => `${p.montant}-${p.devise}`).join(','), 
+        partiesPrivees.map(p => `${p.montant}-${p.devise}`).join(','),
+        structureJuridique
+    ]);
+
     // Helpers pour PPP
     const addPartiePublique = () => {
         const id = `pub${Date.now()}`;
-        setPartiesPubliques(prev => [...prev, { id, nom: "", pourcentage: "0" }]);
+        setPartiesPubliques(prev => [...prev, { id, nom: "", montant: "0", devise: "FCFA", pourcentage: 0 }]);
     };
 
-    const updatePartiePublique = (id: string, nom: string, pourcentage: string) => {
-        setPartiesPubliques(prev => prev.map(p => p.id === id ? { ...p, nom, pourcentage } : p));
+    const updatePartiePubliqueMontant = (id: string, montant: string) => {
+        setPartiesPubliques(prev => prev.map(p => p.id === id ? { ...p, montant } : p));
+    };
+    
+    const updatePartiePubliqueDevise = (id: string, devise: string) => {
+        setPartiesPubliques(prev => prev.map(p => p.id === id ? { ...p, devise } : p));
+    };
+
+    const updatePartiePubliqueNom = (id: string, nom: string) => {
+        setPartiesPubliques(prev => prev.map(p => p.id === id ? { ...p, nom } : p));
     };
 
     const removePartiePublique = (id: string) => {
@@ -718,11 +808,19 @@ export default function NewProjectPage() {
 
     const addPartiePrivee = () => {
         const id = `priv${Date.now()}`;
-        setPartiesPrivees(prev => [...prev, { id, nom: "", pourcentage: "0" }]);
+        setPartiesPrivees(prev => [...prev, { id, nom: "", montant: "0", devise: "FCFA", pourcentage: 0 }]);
     };
 
-    const updatePartiePrivee = (id: string, nom: string, pourcentage: string) => {
-        setPartiesPrivees(prev => prev.map(p => p.id === id ? { ...p, nom, pourcentage } : p));
+    const updatePartiePriveeMontant = (id: string, montant: string) => {
+        setPartiesPrivees(prev => prev.map(p => p.id === id ? { ...p, montant } : p));
+    };
+    
+    const updatePartiePriveeDevise = (id: string, devise: string) => {
+        setPartiesPrivees(prev => prev.map(p => p.id === id ? { ...p, devise } : p));
+    };
+
+    const updatePartiePriveeNom = (id: string, nom: string) => {
+        setPartiesPrivees(prev => prev.map(p => p.id === id ? { ...p, nom } : p));
     };
 
     const removePartiePrivee = (id: string) => {
@@ -738,14 +836,14 @@ export default function NewProjectPage() {
 
     // Calcul des totaux
     const getTotalMOP = () => {
-        const bn = budgetNational ? parseFloat(budgetNationalPct) || 0 : 0;
-        const bailleursTotal = bailleurs.reduce((sum, b) => sum + (parseFloat(b.pourcentage) || 0), 0);
+        const bn = budgetNational ? (parseFloat(budgetNationalPct) || 0) : 0;
+        const bailleursTotal = bailleurs.reduce((sum, b) => sum + (b.pourcentage || 0), 0);
         return bn + bailleursTotal;
     };
 
     const getTotalPPP = () => {
-        const pubTotal = partiesPubliques.reduce((sum, p) => sum + (parseFloat(p.pourcentage) || 0), 0);
-        const privTotal = partiesPrivees.reduce((sum, p) => sum + (parseFloat(p.pourcentage) || 0), 0);
+        const pubTotal = partiesPubliques.reduce((sum, p) => sum + (p.pourcentage || 0), 0);
+        const privTotal = partiesPrivees.reduce((sum, p) => sum + (p.pourcentage || 0), 0);
         return { public: pubTotal, prive: privTotal, total: pubTotal + privTotal };
     };
 
@@ -754,30 +852,68 @@ export default function NewProjectPage() {
 
     const handleCreate = async () => {
         try {
+            // Calculer le budget total en FCFA (devise de référence)
+            let totalBudgetFCFA = 0;
+            let budgetDevise = "FCFA";
+
+            if (structureJuridique === "MOP") {
+                // Contributions MOP
+                const contributions: Array<{ montant: number; devise: string }> = [];
+                if (budgetNational && parseFloat(budgetNationalMontant) > 0) {
+                    contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
+                }
+                bailleurs.forEach(b => {
+                    if (parseFloat(b.montant) > 0) {
+                        contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
+                    }
+                });
+                totalBudgetFCFA = calculateTotalBudget(contributions, "FCFA", exchangeRates);
+            } else {
+                // Contributions PPP
+                const contributions: Array<{ montant: number; devise: string }> = [];
+                partiesPubliques.forEach(p => {
+                    if (parseFloat(p.montant) > 0) {
+                        contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                    }
+                });
+                partiesPrivees.forEach(p => {
+                    if (parseFloat(p.montant) > 0) {
+                        contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                    }
+                });
+                totalBudgetFCFA = calculateTotalBudget(contributions, "FCFA", exchangeRates);
+            }
+
             // Préparer les bailleurs au bon format
             const bailleursFormatted = bailleurs.map(b => ({
                 nom: b.nom,
-                pourcentage: parseFloat(b.pourcentage) || 0
+                montant: parseFloat(b.montant) || 0,
+                devise: b.devise,
+                pourcentage: b.pourcentage || 0
             }));
 
             // Préparer les parties publiques
             const partiesPubliquesFormatted = partiesPubliques.map(p => ({
                 nom: p.nom,
-                pourcentage: parseFloat(p.pourcentage) || 0
+                montant: parseFloat(p.montant) || 0,
+                devise: p.devise,
+                pourcentage: p.pourcentage || 0
             }));
 
             // Préparer les parties privées
             const partiesPriveesFormatted = partiesPrivees.map(p => ({
                 nom: p.nom,
-                pourcentage: parseFloat(p.pourcentage) || 0
+                montant: parseFloat(p.montant) || 0,
+                devise: p.devise,
+                pourcentage: p.pourcentage || 0
             }));
 
             // Construire l'objet projet au format attendu par le backend
             const projectData = {
                 name: titre || "Nouveau Projet",
                 description: description || "Projet d'infrastructure",
-                budget: budget ? parseFloat(budget) : undefined,
-                devise: devise || "FCFA",
+                budget: totalBudgetFCFA > 0 ? totalBudgetFCFA : undefined,
+                devise: budgetDevise,
                 progress: 0,
                 localisation: {
                     region: region || undefined,
@@ -792,10 +928,13 @@ export default function NewProjectPage() {
                 financement: {
                     type: structureJuridique as 'MOP' | 'PPP',
                     budgetNational: budgetNational,
+                    budgetNationalMontant: budgetNational ? parseFloat(budgetNationalMontant) : undefined,
+                    budgetNationalDevise: budgetNational ? budgetNationalDevise : undefined,
                     budgetNationalPct: budgetNational ? parseFloat(budgetNationalPct) : undefined,
                     bailleurs: bailleursFormatted.length > 0 ? bailleursFormatted : undefined,
                     partiesPubliques: partiesPubliquesFormatted.length > 0 ? partiesPubliquesFormatted : undefined,
-                    partiesPrivees: partiesPriveesFormatted.length > 0 ? partiesPriveesFormatted : undefined
+                    partiesPrivees: partiesPriveesFormatted.length > 0 ? partiesPriveesFormatted : undefined,
+                    tauxChange: exchangeRates
                 },
                 dateDebut: dateDebut || undefined,
                 dateFin: dateFin || undefined,
@@ -803,9 +942,11 @@ export default function NewProjectPage() {
                     id: comp.id,
                     name: comp.name,
                     budget: comp.budget ? parseFloat(comp.budget.toString()) : undefined,
+                    typeActivite: comp.typeActivite,
                     sousComposants: comp.sousComposants.map(sc => ({
                         id: sc.id,
                         name: sc.name,
+                        typeActivite: sc.typeActivite,
                         activities: sc.activities.map(act => ({
                             name: act.name,
                             typeActivite: act.typeActivite
@@ -930,38 +1071,8 @@ export default function NewProjectPage() {
                         <div className="flex gap-3 p-3 rounded-[var(--radius-md)] bg-blue-500/10 border border-blue-500/20">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
                             <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
-                                Définissez le cadre juridique et les sources de financement du projet. Le budget peut être renseigné ultérieurement.
+                                Définissez le cadre juridique et les sources de financement du projet. Le budget total sera calculé automatiquement à partir des contributions.
                             </p>
-                        </div>
-
-                        {/* Budget (optionnel) */}
-                        <div>
-                            <h3 className="text-[13px] font-bold text-[var(--text-primary)] mb-3 uppercase tracking-wider">Budget</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Montant</label>
-                                    <input 
-                                        type="number" 
-                                        value={budget} 
-                                        onChange={e => setBudget(e.target.value)} 
-                                        placeholder="ex: 420000000000" 
-                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">Devise</label>
-                                    <select 
-                                        value={devise} 
-                                        onChange={e => setDevise(e.target.value)} 
-                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-4 py-2.5 text-[14px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all cursor-pointer"
-                                    >
-                                        <option value="FCFA">FCFA</option>
-                                        <option value="EUR">EUR (€)</option>
-                                        <option value="USD">USD ($)</option>
-                                        <option value="XAF">XAF</option>
-                                    </select>
-                                </div>
-                            </div>
                         </div>
 
                         {/* Structuration Juridique */}
@@ -1020,18 +1131,38 @@ export default function NewProjectPage() {
                                             </div>
                                         </label>
                                         {budgetNational && (
-                                            <div className="ml-7 flex items-center gap-3">
-                                                <label className="text-[12px] font-medium text-[var(--text-secondary)] whitespace-nowrap">Pourcentage :</label>
-                                                <div className="relative w-28">
-                                                    <input 
-                                                        type="number" 
-                                                        min="0" 
-                                                        max="100" 
-                                                        value={budgetNationalPct} 
-                                                        onChange={e => setBudgetNationalPct(e.target.value)} 
-                                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20 transition-all pr-8" 
+                                            <div className="ml-7 space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    {/* Montant */}
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={budgetNationalMontant}
+                                                        onChange={(e) => setBudgetNationalMontant(e.target.value)}
+                                                        placeholder="Montant"
+                                                        className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                     />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                    {/* Devise */}
+                                                    <select
+                                                        value={budgetNationalDevise}
+                                                        onChange={(e) => setBudgetNationalDevise(e.target.value)}
+                                                        className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer w-24"
+                                                    >
+                                                        {CURRENCIES.map(c => (
+                                                            <option key={c.code} value={c.code}>{c.code}</option>
+                                                        ))}
+                                                    </select>
+                                                    {/* Pourcentage (calculé automatiquement) */}
+                                                    <div className="relative w-20 flex-shrink-0">
+                                                        <input
+                                                            type="text"
+                                                            value={parseFloat(budgetNationalPct).toFixed(2) || "0"}
+                                                            readOnly
+                                                            className="w-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] text-right pr-7 cursor-not-allowed"
+                                                            title="Calculé automatiquement"
+                                                        />
+                                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -1105,27 +1236,50 @@ export default function NewProjectPage() {
                                             </div>
                                         )}
 
-                                        {/* Liste des bailleurs sélectionnés avec pourcentage */}
+                                        {/* Liste des bailleurs sélectionnés avec montant, devise et pourcentage */}
                                         {bailleurs.length > 0 && (
                                             <div className="space-y-2 mt-2">
                                                 {bailleurs.map((b) => (
-                                                    <div key={b.id} className="flex items-center gap-3 p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] group">
-                                                        <div className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0" />
-                                                        <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)] truncate">{b.nom}</span>
-                                                        <div className="relative w-24 flex-shrink-0">
+                                                    <div key={b.id} className="p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] group space-y-2">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0" />
+                                                            <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)] truncate">{b.nom}</span>
+                                                            <button type="button" onClick={() => removeBailleur(b.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 ml-5">
+                                                            {/* Montant */}
                                                             <input
                                                                 type="number"
                                                                 min="0"
-                                                                max="100"
-                                                                value={b.pourcentage}
-                                                                onChange={(e) => updateBailleurPct(b.id, e.target.value)}
-                                                                className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                value={b.montant}
+                                                                onChange={(e) => updateBailleurMontant(b.id, e.target.value)}
+                                                                placeholder="Montant"
+                                                                className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                             />
-                                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                            {/* Devise */}
+                                                            <select
+                                                                value={b.devise}
+                                                                onChange={(e) => updateBailleurDevise(b.id, e.target.value)}
+                                                                className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer w-24"
+                                                            >
+                                                                {CURRENCIES.map(c => (
+                                                                    <option key={c.code} value={c.code}>{c.code}</option>
+                                                                ))}
+                                                            </select>
+                                                            {/* Pourcentage (calculé automatiquement) */}
+                                                            <div className="relative w-20 flex-shrink-0">
+                                                                <input
+                                                                    type="text"
+                                                                    value={b.pourcentage?.toFixed(2) || "0"}
+                                                                    readOnly
+                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] text-right pr-7 cursor-not-allowed"
+                                                                    title="Calculé automatiquement"
+                                                                />
+                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                            </div>
                                                         </div>
-                                                        <button type="button" onClick={() => removeBailleur(b.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
-                                                            <Trash2 size={14} />
-                                                        </button>
                                                     </div>
                                                 ))}
                                             </div>
@@ -1138,19 +1292,123 @@ export default function NewProjectPage() {
                                         const isValid = total === 100;
                                         const isOver = total > 100;
                                         return (
-                                            <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
-                                                isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
-                                            }`}>
-                                                <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total financement</span>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
-                                                        {total}%
-                                                    </span>
-                                                    {isValid && <CheckCircle2 size={14} className="text-green-500" />}
-                                                    {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
-                                                    {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                            <>
+                                                <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
+                                                    isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
+                                                }`}>
+                                                    <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total financement</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
+                                                            {total.toFixed(2)}%
+                                                        </span>
+                                                        {isValid && <CheckCircle2 size={14} className="text-green-500" />}
+                                                        {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
+                                                        {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                                    </div>
                                                 </div>
-                                            </div>
+
+                                                {/* ── Budget Total ── */}
+                                                {isValid && (
+                                                    <div className="p-4 rounded-[var(--radius-lg)] border-2 border-[var(--accent)]/30 bg-[var(--accent)]/5">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="text-[13px] font-bold text-[var(--text-primary)] uppercase tracking-wider">💰 Budget Total du Projet</h4>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setBudgetDisplayMode("detailed")}
+                                                                    className={`px-3 py-1 text-[11px] font-semibold rounded-[var(--radius-sm)] transition-all ${
+                                                                        budgetDisplayMode === "detailed"
+                                                                            ? "bg-[var(--accent)] text-white"
+                                                                            : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
+                                                                    }`}
+                                                                >
+                                                                    Détaillé
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setBudgetDisplayMode("converted")}
+                                                                    className={`px-3 py-1 text-[11px] font-semibold rounded-[var(--radius-sm)] transition-all ${
+                                                                        budgetDisplayMode === "converted"
+                                                                            ? "bg-[var(--accent)] text-white"
+                                                                            : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
+                                                                    }`}
+                                                                >
+                                                                    Converti
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {budgetDisplayMode === "detailed" ? (
+                                                            /* Vue détaillée */
+                                                            <div className="space-y-2">
+                                                                {budgetNational && parseFloat(budgetNationalMontant) > 0 && (
+                                                                    <div className="flex items-center justify-between p-2 bg-[var(--bg-surface)] rounded-[var(--radius-sm)]">
+                                                                        <span className="text-[12px] text-[var(--text-secondary)]">Budget National</span>
+                                                                        <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                                                                            {formatCurrency(parseFloat(budgetNationalMontant), budgetNationalDevise)}
+                                                                            <span className="text-[11px] text-[var(--text-tertiary)] ml-2">({parseFloat(budgetNationalPct).toFixed(2)}%)</span>
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {bailleurs.map((b) => (
+                                                                    parseFloat(b.montant) > 0 && (
+                                                                        <div key={b.id} className="flex items-center justify-between p-2 bg-[var(--bg-surface)] rounded-[var(--radius-sm)]">
+                                                                            <span className="text-[12px] text-[var(--text-secondary)]">{b.nom}</span>
+                                                                            <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                                                                                {formatCurrency(parseFloat(b.montant), b.devise)}
+                                                                                <span className="text-[11px] text-[var(--text-tertiary)] ml-2">({(b.pourcentage || 0).toFixed(2)}%)</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    )
+                                                                ))}
+                                                                <div className="pt-2 mt-2 border-t-2 border-[var(--border-default)]">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-[13px] font-bold text-[var(--text-primary)]">TOTAL</span>
+                                                                        <span className="text-[11px] text-[var(--text-tertiary)] italic">Multi-devises</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            /* Vue convertie */
+                                                            <div className="space-y-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <label className="text-[11px] font-semibold text-[var(--text-secondary)]">Convertir en :</label>
+                                                                    <select
+                                                                        value={conversionCurrency}
+                                                                        onChange={(e) => setConversionCurrency(e.target.value)}
+                                                                        className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2 py-1 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+                                                                    >
+                                                                        {CURRENCIES.map(c => (
+                                                                            <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="p-3 bg-gradient-to-br from-[var(--accent)]/10 to-[var(--accent)]/5 rounded-[var(--radius-md)] border border-[var(--accent)]/20">
+                                                                    <div className="text-[11px] text-[var(--text-secondary)] mb-1">Budget Total Converti</div>
+                                                                    <div className="text-[20px] font-bold text-[var(--accent)]">
+                                                                        {(() => {
+                                                                            const contributions = [];
+                                                                            if (budgetNational && parseFloat(budgetNationalMontant) > 0) {
+                                                                                contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
+                                                                            }
+                                                                            bailleurs.forEach(b => {
+                                                                                if (parseFloat(b.montant) > 0) {
+                                                                                    contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
+                                                                                }
+                                                                            });
+                                                                            const totalConverted = calculateTotalBudget(contributions, conversionCurrency, exchangeRates);
+                                                                            return formatCurrency(totalConverted, conversionCurrency);
+                                                                        })()}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-[10px] text-[var(--text-tertiary)] italic">
+                                                                    * Taux de change utilisés : {Object.entries(exchangeRates).map(([curr, rate]) => `1 ${curr} = ${rate} FCFA`).join(", ")}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </>
                                         );
                                     })()}
                                 </div>
@@ -1183,22 +1441,43 @@ export default function NewProjectPage() {
                                                                 <input
                                                                     type="text"
                                                                     value={p.nom}
-                                                                    onChange={(e) => updatePartiePublique(p.id, e.target.value, p.pourcentage)}
+                                                                    onChange={(e) => updatePartiePubliqueNom(p.id, e.target.value)}
                                                                     placeholder="Nom de l'entité publique..."
                                                                     className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                                 />
                                                                 <button type="button" onClick={() => removePartiePublique(p.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={13} /></button>
                                                             </div>
-                                                            <div className="relative w-full">
+                                                            <div className="flex items-center gap-2">
+                                                                {/* Montant */}
                                                                 <input
                                                                     type="number"
                                                                     min="0"
-                                                                    max="100"
-                                                                    value={p.pourcentage}
-                                                                    onChange={(e) => updatePartiePublique(p.id, p.nom, e.target.value)}
-                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                    value={p.montant}
+                                                                    onChange={(e) => updatePartiePubliqueMontant(p.id, e.target.value)}
+                                                                    placeholder="Montant"
+                                                                    className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                                 />
-                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                                {/* Devise */}
+                                                                <select
+                                                                    value={p.devise}
+                                                                    onChange={(e) => updatePartiePubliqueDevise(p.id, e.target.value)}
+                                                                    className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer w-24"
+                                                                >
+                                                                    {CURRENCIES.map(c => (
+                                                                        <option key={c.code} value={c.code}>{c.code}</option>
+                                                                    ))}
+                                                                </select>
+                                                                {/* Pourcentage (calculé automatiquement) */}
+                                                                <div className="relative w-20 flex-shrink-0">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={p.pourcentage?.toFixed(2) || "0"}
+                                                                        readOnly
+                                                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] text-right pr-7 cursor-not-allowed"
+                                                                        title="Calculé automatiquement"
+                                                                    />
+                                                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1239,22 +1518,43 @@ export default function NewProjectPage() {
                                                                 <input
                                                                     type="text"
                                                                     value={p.nom}
-                                                                    onChange={(e) => updatePartiePrivee(p.id, e.target.value, p.pourcentage)}
+                                                                    onChange={(e) => updatePartiePriveeNom(p.id, e.target.value)}
                                                                     placeholder="Nom de l'entité privée..."
                                                                     className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                                 />
                                                                 <button type="button" onClick={() => removePartiePrivee(p.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={13} /></button>
                                                             </div>
-                                                            <div className="relative w-full">
+                                                            <div className="flex items-center gap-2">
+                                                                {/* Montant */}
                                                                 <input
                                                                     type="number"
                                                                     min="0"
-                                                                    max="100"
-                                                                    value={p.pourcentage}
-                                                                    onChange={(e) => updatePartiePrivee(p.id, p.nom, e.target.value)}
-                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] text-right pr-7 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                                                                    value={p.montant}
+                                                                    onChange={(e) => updatePartiePriveeMontant(p.id, e.target.value)}
+                                                                    placeholder="Montant"
+                                                                    className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
                                                                 />
-                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                                {/* Devise */}
+                                                                <select
+                                                                    value={p.devise}
+                                                                    onChange={(e) => updatePartiePriveeDevise(p.id, e.target.value)}
+                                                                    className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer w-24"
+                                                                >
+                                                                    {CURRENCIES.map(c => (
+                                                                        <option key={c.code} value={c.code}>{c.code}</option>
+                                                                    ))}
+                                                                </select>
+                                                                {/* Pourcentage (calculé automatiquement) */}
+                                                                <div className="relative w-20 flex-shrink-0">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={p.pourcentage?.toFixed(2) || "0"}
+                                                                        readOnly
+                                                                        className="w-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] text-right pr-7 cursor-not-allowed"
+                                                                        title="Calculé automatiquement"
+                                                                    />
+                                                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -1277,19 +1577,135 @@ export default function NewProjectPage() {
                                         const isValid = total === 100;
                                         const isOver = total > 100;
                                         return (
-                                            <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
-                                                isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
-                                            }`}>
-                                                <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total Répartition (Public + Privé)</span>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
-                                                        {total}%
-                                                    </span>
-                                                    {isValid && <CheckCircle2 size={14} className="text-green-500" />}
-                                                    {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
-                                                    {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                            <>
+                                                <div className={`flex items-center justify-between p-3 rounded-[var(--radius-md)] border ${
+                                                    isValid ? "bg-green-500/5 border-green-500/20" : isOver ? "bg-red-500/5 border-red-500/20" : "bg-[var(--bg-inset)] border-[var(--border-default)]"
+                                                }`}>
+                                                    <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Total Répartition (Public + Privé)</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[14px] font-bold ${isValid ? "text-green-600" : isOver ? "text-red-600" : "text-[var(--text-primary)]"}`}>
+                                                            {total}%
+                                                        </span>
+                                                        {isValid && <CheckCircle2 size={14} className="text-green-500" />}
+                                                        {isOver && <span className="text-[10px] text-red-500 font-medium">Dépasse 100%</span>}
+                                                        {!isValid && !isOver && total > 0 && <span className="text-[10px] text-amber-500 font-medium">Doit atteindre 100%</span>}
+                                                    </div>
                                                 </div>
-                                            </div>
+
+                                                {/* ── Budget Total PPP ── */}
+                                                {isValid && (
+                                                    <div className="p-4 rounded-[var(--radius-lg)] border-2 border-[var(--accent)]/30 bg-[var(--accent)]/5">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="text-[13px] font-bold text-[var(--text-primary)] uppercase tracking-wider">💰 Budget Total du Projet</h4>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setBudgetDisplayMode("detailed")}
+                                                                    className={`px-3 py-1 text-[11px] font-semibold rounded-[var(--radius-sm)] transition-all ${
+                                                                        budgetDisplayMode === "detailed"
+                                                                            ? "bg-[var(--accent)] text-white"
+                                                                            : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
+                                                                    }`}
+                                                                >
+                                                                    Détaillé
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setBudgetDisplayMode("converted")}
+                                                                    className={`px-3 py-1 text-[11px] font-semibold rounded-[var(--radius-sm)] transition-all ${
+                                                                        budgetDisplayMode === "converted"
+                                                                            ? "bg-[var(--accent)] text-white"
+                                                                            : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
+                                                                    }`}
+                                                                >
+                                                                    Converti
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {budgetDisplayMode === "detailed" ? (
+                                                            /* Vue détaillée */
+                                                            <div className="space-y-2">
+                                                                {/* Parties publiques */}
+                                                                {partiesPubliques.map((p) => (
+                                                                    parseFloat(p.montant) > 0 && (
+                                                                        <div key={p.id} className="flex items-center justify-between p-2 bg-[var(--bg-surface)] rounded-[var(--radius-sm)]">
+                                                                            <span className="text-[12px] text-[var(--text-secondary)]">
+                                                                                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                                                                                {p.nom}
+                                                                            </span>
+                                                                            <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                                                                                {formatCurrency(parseFloat(p.montant), p.devise)}
+                                                                                <span className="text-[11px] text-[var(--text-tertiary)] ml-2">({(p.pourcentage || 0).toFixed(2)}%)</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    )
+                                                                ))}
+                                                                {/* Parties privées */}
+                                                                {partiesPrivees.map((p) => (
+                                                                    parseFloat(p.montant) > 0 && (
+                                                                        <div key={p.id} className="flex items-center justify-between p-2 bg-[var(--bg-surface)] rounded-[var(--radius-sm)]">
+                                                                            <span className="text-[12px] text-[var(--text-secondary)]">
+                                                                                <span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
+                                                                                {p.nom}
+                                                                            </span>
+                                                                            <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                                                                                {formatCurrency(parseFloat(p.montant), p.devise)}
+                                                                                <span className="text-[11px] text-[var(--text-tertiary)] ml-2">({(p.pourcentage || 0).toFixed(2)}%)</span>
+                                                                            </span>
+                                                                        </div>
+                                                                    )
+                                                                ))}
+                                                                <div className="pt-2 mt-2 border-t-2 border-[var(--border-default)]">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-[13px] font-bold text-[var(--text-primary)]">TOTAL</span>
+                                                                        <span className="text-[11px] text-[var(--text-tertiary)] italic">Multi-devises</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            /* Vue convertie */
+                                                            <div className="space-y-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <label className="text-[11px] font-semibold text-[var(--text-secondary)]">Convertir en :</label>
+                                                                    <select
+                                                                        value={conversionCurrency}
+                                                                        onChange={(e) => setConversionCurrency(e.target.value)}
+                                                                        className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2 py-1 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+                                                                    >
+                                                                        {CURRENCIES.map(c => (
+                                                                            <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="p-3 bg-gradient-to-br from-[var(--accent)]/10 to-[var(--accent)]/5 rounded-[var(--radius-md)] border border-[var(--accent)]/20">
+                                                                    <div className="text-[11px] text-[var(--text-secondary)] mb-1">Budget Total Converti</div>
+                                                                    <div className="text-[20px] font-bold text-[var(--accent)]">
+                                                                        {(() => {
+                                                                            const contributions: Array<{ montant: number; devise: string }> = [];
+                                                                            partiesPubliques.forEach(p => {
+                                                                                if (parseFloat(p.montant) > 0) {
+                                                                                    contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                                                                                }
+                                                                            });
+                                                                            partiesPrivees.forEach(p => {
+                                                                                if (parseFloat(p.montant) > 0) {
+                                                                                    contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                                                                                }
+                                                                            });
+                                                                            const totalConverted = calculateTotalBudget(contributions, conversionCurrency, exchangeRates);
+                                                                            return formatCurrency(totalConverted, conversionCurrency);
+                                                                        })()}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-[10px] text-[var(--text-tertiary)] italic">
+                                                                    * Taux de change utilisés : {Object.entries(exchangeRates).map(([curr, rate]) => `1 ${curr} = ${rate} FCFA`).join(", ")}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </>
                                         );
                                     })()}
                                 </div>
@@ -1331,7 +1747,7 @@ export default function NewProjectPage() {
                                         {/* Budget inline */}
                                         <div className="relative w-[150px] flex-shrink-0">
                                             <input type="number" value={comp.budget || ""} onChange={e => updateComponentBudget(ci, e.target.value)} placeholder="Budget" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] pr-12 focus:outline-none focus:border-[var(--accent)] transition-colors" />
-                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-tertiary)] font-bold">{devise}</span>
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-tertiary)] font-bold">FCFA</span>
                                         </div>
                                         {/* Type d'activité (si niveau le plus bas) */}
                                         {isComponentLowestLevel(comp) && (
@@ -1482,8 +1898,36 @@ export default function NewProjectPage() {
                                 <div className="text-[13px] font-semibold text-[var(--text-primary)]">{ville || region || "—"}</div>
                             </div>
                             <div className="bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-3 border border-[var(--border-default)]">
-                                <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Budget</div>
-                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{budget ? `${Number(budget).toLocaleString("fr-FR")} ${devise}` : "—"}</div>
+                                <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Budget Total</div>
+                                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                    {(() => {
+                                        const contributions: Array<{ montant: number; devise: string }> = [];
+                                        if (structureJuridique === "MOP") {
+                                            if (budgetNational && parseFloat(budgetNationalMontant) > 0) {
+                                                contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
+                                            }
+                                            bailleurs.forEach(b => {
+                                                if (parseFloat(b.montant) > 0) {
+                                                    contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
+                                                }
+                                            });
+                                        } else {
+                                            partiesPubliques.forEach(p => {
+                                                if (parseFloat(p.montant) > 0) {
+                                                    contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                                                }
+                                            });
+                                            partiesPrivees.forEach(p => {
+                                                if (parseFloat(p.montant) > 0) {
+                                                    contributions.push({ montant: parseFloat(p.montant), devise: p.devise });
+                                                }
+                                            });
+                                        }
+                                        if (contributions.length === 0) return "—";
+                                        const total = calculateTotalBudget(contributions, "FCFA", exchangeRates);
+                                        return formatCurrency(total, "FCFA");
+                                    })()}
+                                </div>
                             </div>
                             <div className="bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-3 border border-[var(--border-default)]">
                                 <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Financement</div>

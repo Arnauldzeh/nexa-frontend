@@ -8,7 +8,7 @@ import {
   ChevronUp, ChevronDown, Save, MapPin, DollarSign, Calendar,
   CheckCircle2,
 } from "lucide-react";
-import { getProjectById, updateProject, type Project, type Component, type SousComposant } from "@/lib/projectStore";
+import { getProjectById, updateProject, isComponentLowestLevel, isSousComposantLowestLevel, type Project, type Component, type SousComposant } from "@/lib/projectStore";
 import { getProjectTeam, getUserById, getUserFullName, type TeamAssignment } from "@/lib/userStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -67,11 +67,22 @@ export default function ProjectConfigPage() {
 
   // ── Team data ──
   const [teamAssignments, setTeamAssignments] = useState<TeamAssignment[]>([]);
+  const [teamUsers, setTeamUsers] = useState<Map<string, any>>(new Map());
   
   useEffect(() => {
     async function loadTeam() {
       const team = await getProjectTeam(projectId);
       setTeamAssignments(team);
+      
+      // Charger les utilisateurs
+      const usersMap = new Map();
+      for (const assignment of team) {
+        const user = await getUserById(assignment.userId);
+        if (user) {
+          usersMap.set(assignment.userId, user);
+        }
+      }
+      setTeamUsers(usersMap);
     }
     loadTeam();
   }, [projectId]);
@@ -80,7 +91,8 @@ export default function ProjectConfigPage() {
 
   // ── Structure actions ──
   const addComponent = () => {
-    setComponents(prev => [...prev, { id: `c${Date.now()}`, name: "", sousComposants: [] }]);
+    // Nouvelle composante sans sous-composantes = niveau le plus bas, donc ajouter typeActivite
+    setComponents(prev => [...prev, { id: `c${Date.now()}`, name: "", sousComposants: [], typeActivite: "travaux" }]);
     markChanged();
   };
   const removeComponent = (idx: number) => {
@@ -99,11 +111,29 @@ export default function ProjectConfigPage() {
     markChanged();
   };
   const updateComponentBudget = (idx: number, budget: string) => {
-    setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget } : c));
+    setComponents(prev => prev.map((c, i) => i === idx ? { ...c, budget: budget ? parseFloat(budget) : undefined } : c));
+    markChanged();
+  };
+
+  // TypeActivite pour composantes et sous-composantes
+  const updateComponentType = (idx: number, typeActivite: string) => {
+    setComponents(prev => prev.map((c, i) => i === idx ? { ...c, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : c));
+    markChanged();
+  };
+  const updateSCType = (compIdx: number, scIdx: number, typeActivite: string) => {
+    setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : sc) } : c));
     markChanged();
   };
   const addSousComposant = (compIdx: number) => {
-    setComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] } : c));
+    setComponents(prev => prev.map((c, i) => {
+      if (i !== compIdx) return c;
+      // Quand on ajoute une sous-composante, retirer le typeActivite de la composante
+      const { typeActivite, ...compWithoutType } = c;
+      return { 
+        ...compWithoutType, 
+        sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] 
+      };
+    }));
     markChanged();
   };
   const removeSousComposant = (compIdx: number, scIdx: number) => {
@@ -112,7 +142,15 @@ export default function ProjectConfigPage() {
       title: "Supprimer le sous-composant",
       message: "Êtes-vous sûr de vouloir supprimer ce sous-composant ? Cette action est irréversible.",
       onConfirm: () => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.filter((_, si) => si !== scIdx) } : c));
+        setComponents(prev => prev.map((c, ci) => {
+          if (ci !== compIdx) return c;
+          const updatedSCs = c.sousComposants.filter((_, si) => si !== scIdx);
+          // Si on supprime la dernière sous-composante, ajouter typeActivite à la composante
+          if (updatedSCs.length === 0) {
+            return { ...c, sousComposants: updatedSCs, typeActivite: "travaux" };
+          }
+          return { ...c, sousComposants: updatedSCs };
+        }));
         markChanged();
       }
     });
@@ -122,14 +160,25 @@ export default function ProjectConfigPage() {
     markChanged();
   };
   const addActivity = (compIdx: number, scIdx: number, typeActivite: string = "travaux") => {
-    const newAct = { name: "", typeActivite };
-    setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: [...sc.activities, newAct] } : sc) } : c));
+    const newAct = { name: "", typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' };
+    setComponents(prev => prev.map((c, ci) => {
+      if (ci !== compIdx) return c;
+      return {
+        ...c,
+        sousComposants: c.sousComposants.map((sc, si) => {
+          if (si !== scIdx) return sc;
+          // Quand on ajoute une activité, retirer le typeActivite de la sous-composante
+          const { typeActivite: scType, ...scWithoutType } = sc;
+          return { ...scWithoutType, activities: [...sc.activities, newAct] };
+        })
+      };
+    }));
     markChanged();
   };
   const updateActivityName = (compIdx: number, scIdx: number, actIdx: number, name: string) => {
     setComponents(prev => prev.map((c, ci) => ci === compIdx ? {
       ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? {
-        ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name, typeActivite: "travaux" } : { ...a, name }) : a)
+        ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? { ...a, name } : a)
       } : sc)
     } : c));
     markChanged();
@@ -137,7 +186,7 @@ export default function ProjectConfigPage() {
   const updateActivityType = (compIdx: number, scIdx: number, actIdx: number, typeActivite: string) => {
     setComponents(prev => prev.map((c, ci) => ci === compIdx ? {
       ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? {
-        ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? (typeof a === "string" ? { name: a, typeActivite } : { ...a, typeActivite }) : a)
+        ...sc, activities: sc.activities.map((a, ai) => ai === actIdx ? { ...a, typeActivite: typeActivite as 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi' } : a)
       } : sc)
     } : c));
     markChanged();
@@ -148,7 +197,21 @@ export default function ProjectConfigPage() {
       title: "Supprimer l'activité",
       message: "Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est irréversible.",
       onConfirm: () => {
-        setComponents(prev => prev.map((c, ci) => ci === compIdx ? { ...c, sousComposants: c.sousComposants.map((sc, si) => si === scIdx ? { ...sc, activities: sc.activities.filter((_, ai) => ai !== actIdx) } : sc) } : c));
+        setComponents(prev => prev.map((c, ci) => {
+          if (ci !== compIdx) return c;
+          return {
+            ...c,
+            sousComposants: c.sousComposants.map((sc, si) => {
+              if (si !== scIdx) return sc;
+              const updatedActivities = sc.activities.filter((_, ai) => ai !== actIdx);
+              // Si on supprime la dernière activité, ajouter typeActivite à la sous-composante
+              if (updatedActivities.length === 0) {
+                return { ...sc, activities: updatedActivities, typeActivite: "travaux" };
+              }
+              return { ...sc, activities: updatedActivities };
+            })
+          };
+        }));
         markChanged();
       }
     });
@@ -159,7 +222,7 @@ export default function ProjectConfigPage() {
       if (ci <= 0) return;
       setComponents(prev => {
           const comp = prev[ci];
-          const newSC: SousComposantData = { id: `sc${Date.now()}`, name: comp.name, activities: comp.sousComposants.flatMap(sc => sc.activities.length > 0 ? sc.activities : [{ name: sc.name, typeActivite: "travaux" } as const]) };
+          const newSC: SousComposant = { id: `sc${Date.now()}`, name: comp.name, activities: comp.sousComposants.flatMap(sc => sc.activities.length > 0 ? sc.activities : [{ name: sc.name, typeActivite: "travaux" as const }]) };
           const result = prev.filter((_, i) => i !== ci);
           result[ci - 1] = { ...result[ci - 1], sousComposants: [...result[ci - 1].sousComposants, newSC] };
           return result;
@@ -171,7 +234,7 @@ export default function ProjectConfigPage() {
       setComponents(prev => {
           const comp = prev[ci];
           const sc = comp.sousComposants[si];
-          const newComp: ComponentData = { id: `c${Date.now()}`, name: sc.name, sousComposants: [], budget: "" };
+          const newComp: Component = { id: `c${Date.now()}`, name: sc.name, sousComposants: [] };
           if (sc.activities.length > 0) {
               newComp.sousComposants = sc.activities.map((a, idx) => ({ id: `sc${Date.now() + idx + 1}`, name: getActivityName(a), activities: [] }));
           }
@@ -204,7 +267,7 @@ export default function ProjectConfigPage() {
       setComponents(prev => prev.map((c, i) => {
           if (i !== ci) return c;
           const actName = getActivityName(c.sousComposants[si].activities[ai]);
-          const newSC: SousComposantData = { id: `sc${Date.now()}`, name: actName, activities: [] };
+          const newSC: SousComposant = { id: `sc${Date.now()}`, name: actName, activities: [] };
           const updatedSC = c.sousComposants.map((sc, j) => j === si ? { ...sc, activities: sc.activities.filter((_, k) => k !== ai) } : sc);
           updatedSC.splice(si + 1, 0, newSC);
           return { ...c, sousComposants: updatedSC };
@@ -339,7 +402,14 @@ export default function ProjectConfigPage() {
                 </div>
                 <div>
                   <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Financement</div>
-                  <div className="text-[13px] text-[var(--text-secondary)]">{project.bailleur || "—"}</div>
+                  <div className="text-[13px] text-[var(--text-secondary)]">
+                    {project.financement?.type === "MOP" 
+                      ? `MOP${project.financement.bailleurs && project.financement.bailleurs.length > 0 ? ` - ${project.financement.bailleurs.map(b => b.nom).join(", ")}` : ""}`
+                      : project.financement?.type === "PPP" 
+                        ? `PPP - ${(project.financement.partiesPubliques?.length || 0) + (project.financement.partiesPrivees?.length || 0)} parties`
+                        : "—"
+                    }
+                  </div>
                 </div>
               </div>
             </div>
@@ -397,6 +467,12 @@ export default function ProjectConfigPage() {
                       <input type="text" value={comp.budget || ""} onChange={e => updateComponentBudget(ci, e.target.value)} placeholder="Budget" className="w-full bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] pr-12 focus:outline-none focus:border-[var(--accent)] transition-colors" />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-tertiary)] font-bold">FCFA</span>
                     </div>
+                    {/* Type d'activité (si niveau le plus bas) */}
+                    {isComponentLowestLevel(comp) && (
+                      <select value={comp.typeActivite || "travaux"} onChange={e => updateComponentType(ci, e.target.value)} className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[10px] font-semibold text-[var(--text-secondary)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)] cursor-pointer w-[140px] flex-shrink-0">
+                        {ACTIVITY_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                      </select>
+                    )}
                     <div className="flex items-center gap-1 flex-shrink-0 ml-1 border-l border-[var(--border-subtle)] pl-2">
                        <button type="button" onClick={() => demoteComponent(ci)} disabled={ci === 0} className="p-1.5 rounded-[var(--radius-sm)] hover:bg-orange-500/10 text-orange-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all" title="Transformer en Sous-composant"><ChevronDown size={14} /></button>
                        <button type="button" onClick={() => removeComponent(ci)} className="p-1.5 rounded-[var(--radius-sm)] hover:bg-red-500/10 text-red-500/60 hover:text-red-500 transition-all" title="Supprimer"><Trash2 size={14} /></button>
@@ -410,6 +486,12 @@ export default function ProjectConfigPage() {
                         <div className="flex items-center gap-2 py-1.5">
                           <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
                           <input type="text" value={sc.name} onChange={e => updateSCName(ci, si, e.target.value)} placeholder="Sous-composant..." className="flex-1 min-w-0 bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none text-[12px] font-semibold text-[var(--text-secondary)] px-1 py-0.5 transition-colors" />
+                          {/* Type d'activité (si niveau le plus bas) */}
+                          {isSousComposantLowestLevel(sc) && (
+                            <select value={sc.typeActivite || "travaux"} onChange={e => updateSCType(ci, si, e.target.value)} className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[9px] font-semibold text-[var(--text-secondary)] px-1.5 py-1 focus:outline-none focus:border-[var(--accent)] cursor-pointer w-[120px] flex-shrink-0">
+                              {ACTIVITY_TYPES.map(t => (<option key={t.id} value={t.id}>{t.label}</option>))}
+                            </select>
+                          )}
                           <div className="flex items-center gap-1 flex-shrink-0 border-l border-[var(--border-subtle)] pl-1.5">
                               <button type="button" onClick={() => promoteSC(ci, si)} className="p-1 rounded-[var(--radius-sm)] hover:bg-green-500/10 text-green-500 transition-all" title="Transformer en Composant"><ChevronUp size={14} /></button>
                               <button type="button" onClick={() => demoteSC(ci, si)} disabled={si === 0} className="p-1 rounded-[var(--radius-sm)] hover:bg-orange-500/10 text-orange-500 disabled:opacity-20 disabled:cursor-not-allowed transition-all" title="Transformer en Activité"><ChevronDown size={14} /></button>
@@ -522,10 +604,10 @@ export default function ProjectConfigPage() {
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
                   {teamAssignments.map((assignment, index) => {
-                    const user = getUserById(assignment.userId);
+                    const user = teamUsers.get(assignment.userId);
                     if (!user) return null;
                     return (
-                      <tr key={assignment.id || `assignment-${index}`} className="hover:bg-[var(--bg-surface-hover)] transition-colors">
+                      <tr key={`assignment-${index}`} className="hover:bg-[var(--bg-surface-hover)] transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold">
@@ -533,7 +615,7 @@ export default function ProjectConfigPage() {
                             </div>
                             <div className="flex flex-col">
                               <span className="text-sm font-semibold text-[var(--text-primary)]">
-                                {getUserFullName(assignment.userId)}
+                                {user.prenom} {user.nom}
                               </span>
                               <span className="text-xs text-[var(--text-tertiary)]">
                                 {assignment.functionalRole} • {assignment.level === "project" ? "Niveau Projet" : "Sous-composant"}

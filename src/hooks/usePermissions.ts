@@ -41,6 +41,8 @@ export type UsePermissionsReturn = {
  */
 export function usePermissions(projectId?: string): UsePermissionsReturn {
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [projectRole, setProjectRole] = useState<ProjectRole | null>(null);
 
   useEffect(() => {
     // Charger la session initiale
@@ -52,18 +54,35 @@ export function usePermissions(projectId?: string): UsePermissionsReturn {
     return () => window.removeEventListener("auth-changed", handleAuthChange);
   }, []);
 
-  const user = useMemo(() => {
-    if (!session) return null;
-    return getUserById(session.userId) ?? null;
+  useEffect(() => {
+    async function loadUser() {
+      if (!session) {
+        setUser(null);
+        return;
+      }
+      const u = await getUserById(session.userId);
+      setUser(u ?? null);
+    }
+    loadUser();
   }, [session]);
 
-  const platformRole = session?.platformRole ?? null;
-
-  const projectRole = useMemo(() => {
-    if (!session || !projectId) return null;
-    if (session.platformRole === "admin") return "chef_projet" as ProjectRole; // Admin a les droits chef de projet partout
-    return getUserProjectRole(session.userId, projectId);
+  useEffect(() => {
+    async function loadProjectRole() {
+      if (!session || !projectId) {
+        setProjectRole(null);
+        return;
+      }
+      if (session.platformRole === "admin") {
+        setProjectRole("chef_projet" as ProjectRole);
+        return;
+      }
+      const role = await getUserProjectRole(session.userId, projectId);
+      setProjectRole(role);
+    }
+    loadProjectRole();
   }, [session, projectId]);
+
+  const platformRole = session?.platformRole ?? null;
 
   const can = useCallback(
     (permission: Permission): boolean => {

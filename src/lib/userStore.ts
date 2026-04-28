@@ -84,6 +84,14 @@ export async function addTeamAssignment(assignment: {
   entityId?: string;
   entityName?: string;
   assignedBy?: string;
+  permissions?: string[];
+  newUserData?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    position: string;
+  };
 }): Promise<TeamAssignment> {
   return await teamService.assign(assignment);
 }

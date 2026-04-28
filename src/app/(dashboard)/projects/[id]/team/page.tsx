@@ -18,18 +18,13 @@ import {
   getProjectTeam,
   addTeamAssignment,
   removeTeamAssignment,
-  updateTeamAssignment,
-  getUserById,
-  FUNCTIONAL_ROLES_PROJET,
-  FUNCTIONAL_ROLES_COMPOSANT,
-  FUNCTIONAL_ROLES_SOUS_COMPOSANT,
-  FUNCTIONAL_ROLES_ACTIVITE,
   type User,
   type TeamAssignment,
 } from "@/lib/userStore";
 import { type ProjectRole, PROJECT_ROLE_LABELS } from "@/lib/rbacStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import AddMemberModal, { type MemberFormData } from "@/components/team/AddMemberModal";
 
 export default function ProjectTeamPage() {
   const params = useParams();
@@ -58,20 +53,6 @@ export default function ProjectTeamPage() {
     loadProject();
   }, [projectId]);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    userId: "",
-    functionalRole: "",
-    projectRole: "contributeur" as ProjectRole,
-    activeInProject: true,
-    level: "project" as "project" | "component" | "subcomponent" | "activity",
-    entityId: "",
-    entityName: "",
-    // Pour la cascade
-    selectedComponent: "",
-    selectedSubcomponent: "",
-  });
-
   useEffect(() => {
     refreshData();
   }, [projectId]);
@@ -92,33 +73,7 @@ export default function ProjectTeamPage() {
   };
 
   const handleOpenModal = (assignment?: TeamAssignment) => {
-    if (assignment) {
-      setEditingAssignment(assignment);
-      setFormData({
-        userId: assignment.userId,
-        functionalRole: assignment.functionalRole,
-        projectRole: assignment.projectRole,
-        activeInProject: assignment.activeInProject,
-        level: assignment.level,
-        entityId: assignment.entityId || "",
-        entityName: assignment.entityName || "",
-        selectedComponent: "",
-        selectedSubcomponent: "",
-      });
-    } else {
-      setEditingAssignment(null);
-      setFormData({
-        userId: "",
-        functionalRole: "",
-        projectRole: "contributeur",
-        activeInProject: true,
-        level: "project",
-        entityId: "",
-        entityName: "",
-        selectedComponent: "",
-        selectedSubcomponent: "",
-      });
-    }
+    setEditingAssignment(assignment || null);
     setShowAddModal(true);
   };
 
@@ -127,11 +82,14 @@ export default function ProjectTeamPage() {
     setEditingAssignment(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (data: MemberFormData) => {
+    if (!data.userId && !data.newUserData) {
+      toast.error("Veuillez sélectionner ou créer un utilisateur");
+      return;
+    }
 
-    if (!formData.userId || !formData.functionalRole) {
-      toast.error("Veuillez remplir tous les champs obligatoires");
+    if (!data.functionalRole) {
+      toast.error("Veuillez saisir le rôle fonctionnel");
       return;
     }
 
@@ -141,23 +99,27 @@ export default function ProjectTeamPage() {
         await removeTeamAssignment(editingAssignment._id);
         await addTeamAssignment({
           projectId,
-          userId: formData.userId,
-          functionalRole: formData.functionalRole,
-          projectRole: formData.projectRole,
-          level: formData.level,
-          entityId: formData.entityId,
-          entityName: formData.entityName,
+          userId: data.userId || "pending", // Si nouvel utilisateur, marquer comme "pending"
+          functionalRole: data.functionalRole,
+          projectRole: data.projectRole,
+          level: data.level,
+          entityId: data.entityId,
+          entityName: data.entityName,
+          permissions: data.permissions,
+          newUserData: data.newUserData,
         });
         toast.success("Affectation modifiée");
       } else {
         await addTeamAssignment({
           projectId,
-          userId: formData.userId,
-          functionalRole: formData.functionalRole,
-          projectRole: formData.projectRole,
-          level: formData.level,
-          entityId: formData.entityId,
-          entityName: formData.entityName,
+          userId: data.userId || "pending",
+          functionalRole: data.functionalRole,
+          projectRole: data.projectRole,
+          level: data.level,
+          entityId: data.entityId,
+          entityName: data.entityName,
+          permissions: data.permissions,
+          newUserData: data.newUserData,
         });
         toast.success("Membre ajouté à l'équipe");
       }
@@ -186,53 +148,6 @@ export default function ProjectTeamPage() {
         toast.error("Erreur lors de la suppression");
       }
     }
-  };
-
-  const getRoleOptions = () => {
-    switch (formData.level) {
-      case "project":
-        return FUNCTIONAL_ROLES_PROJET;
-      case "component":
-        return FUNCTIONAL_ROLES_COMPOSANT;
-      case "subcomponent":
-        return FUNCTIONAL_ROLES_SOUS_COMPOSANT;
-      case "activity":
-        return FUNCTIONAL_ROLES_ACTIVITE;
-      default:
-        return FUNCTIONAL_ROLES_PROJET;
-    }
-  };
-
-  const getEntityOptions = () => {
-    if (!project) return [];
-    
-    if (formData.level === "component") {
-      return project.components.map((c) => ({ id: c.id, name: c.name }));
-    }
-    
-    if (formData.level === "subcomponent") {
-      if (!formData.selectedComponent) return [];
-      const comp = project.components.find(c => c.id === formData.selectedComponent);
-      if (!comp) return [];
-      return comp.sousComposants.map((sc) => ({ 
-        id: sc.id, 
-        name: `${comp.name} > ${sc.name}` 
-      }));
-    }
-    
-    if (formData.level === "activity") {
-      if (!formData.selectedComponent || !formData.selectedSubcomponent) return [];
-      const comp = project.components.find(c => c.id === formData.selectedComponent);
-      if (!comp) return [];
-      const sc = comp.sousComposants.find(s => s.id === formData.selectedSubcomponent);
-      if (!sc) return [];
-      return sc.activities.map((act, idx) => ({ 
-        id: `${sc.id}-act-${idx}`, 
-        name: `${comp.name} > ${sc.name} > ${getActivityName(act)}` 
-      }));
-    }
-    
-    return [];
   };
 
   const getLevelLabel = (level: string) => {
@@ -267,7 +182,7 @@ export default function ProjectTeamPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* HEADER - Same as project page */}
+      {/* HEADER */}
       <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] px-8 pt-5 pb-4 flex-shrink-0">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3.5">
@@ -455,263 +370,25 @@ export default function ProjectTeamPage() {
       </div>
 
       {/* Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-[var(--border-default)]">
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                {editingAssignment
-                  ? "Modifier l'affectation"
-                  : "Ajouter un membre"}
-              </h2>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Utilisateur *
-                </label>
-                <select
-                  value={formData.userId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, userId: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                  required
-                >
-                  <option value="">Sélectionner un utilisateur</option>
-                  {allUsers
-                    .filter((u) => u.status === "active")
-                    .map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName} - {user.position || "N/A"}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Niveau d'affectation *
-                </label>
-                <select
-                  value={formData.level}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      level: e.target.value as
-                        | "project"
-                        | "component"
-                        | "subcomponent"
-                        | "activity",
-                      functionalRole: "",
-                      projectRole: "contributeur",
-                      entityId: "",
-                      entityName: "",
-                      selectedComponent: "",
-                      selectedSubcomponent: "",
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                  required
-                >
-                  <option value="project">Projet</option>
-                  <option value="component">Composant</option>
-                  <option value="subcomponent">Sous-composant</option>
-                  <option value="activity">Activité</option>
-                </select>
-              </div>
-
-              {/* Cascade: Component selection */}
-              {(formData.level === "component" || formData.level === "subcomponent" || formData.level === "activity") && (
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                    Composant *
-                  </label>
-                  <select
-                    value={formData.level === "component" ? formData.entityId : formData.selectedComponent}
-                    onChange={(e) => {
-                      if (formData.level === "component") {
-                        const comp = project?.components.find(c => c.id === e.target.value);
-                        setFormData({
-                          ...formData,
-                          entityId: e.target.value,
-                          entityName: comp?.name || "",
-                        });
-                      } else {
-                        setFormData({
-                          ...formData,
-                          selectedComponent: e.target.value,
-                          selectedSubcomponent: "",
-                          entityId: "",
-                          entityName: "",
-                        });
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                    required
-                  >
-                    <option value="">Sélectionner un composant</option>
-                    {project?.components.map((comp) => (
-                      <option key={comp.id} value={comp.id}>
-                        {comp.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Cascade: Subcomponent selection */}
-              {(formData.level === "subcomponent" || formData.level === "activity") && formData.selectedComponent && (
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                    Sous-composant *
-                  </label>
-                  <select
-                    value={formData.level === "subcomponent" ? formData.entityId : formData.selectedSubcomponent}
-                    onChange={(e) => {
-                      if (formData.level === "subcomponent") {
-                        const comp = project?.components.find(c => c.id === formData.selectedComponent);
-                        const sc = comp?.sousComposants.find(s => s.id === e.target.value);
-                        setFormData({
-                          ...formData,
-                          entityId: e.target.value,
-                          entityName: sc ? `${comp?.name} > ${sc.name}` : "",
-                        });
-                      } else {
-                        setFormData({
-                          ...formData,
-                          selectedSubcomponent: e.target.value,
-                          entityId: "",
-                          entityName: "",
-                        });
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                    required
-                  >
-                    <option value="">Sélectionner un sous-composant</option>
-                    {project?.components
-                      .find(c => c.id === formData.selectedComponent)
-                      ?.sousComposants.map((sc) => (
-                        <option key={sc.id} value={sc.id}>
-                          {sc.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Cascade: Activity selection */}
-              {formData.level === "activity" && formData.selectedComponent && formData.selectedSubcomponent && (
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                    Activité *
-                  </label>
-                  <select
-                    value={formData.entityId}
-                    onChange={(e) => {
-                      const comp = project?.components.find(c => c.id === formData.selectedComponent);
-                      const sc = comp?.sousComposants.find(s => s.id === formData.selectedSubcomponent);
-                      const actIndex = sc?.activities.findIndex((_, idx) => `${sc.id}-act-${idx}` === e.target.value);
-                      const actObj = actIndex !== undefined && actIndex >= 0 ? sc?.activities[actIndex] : undefined;
-                      const actName = actObj ? getActivityName(actObj) : "";
-                      setFormData({
-                        ...formData,
-                        entityId: e.target.value,
-                        entityName: actName ? `${comp?.name} > ${sc?.name} > ${actName}` : "",
-                      });
-                    }}
-                    className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                    required
-                  >
-                    <option value="">Sélectionner une activité</option>
-                    {project?.components
-                      .find(c => c.id === formData.selectedComponent)
-                      ?.sousComposants.find(s => s.id === formData.selectedSubcomponent)
-                      ?.activities.map((act, idx) => {
-                        const actId = `${formData.selectedSubcomponent}-act-${idx}`;
-                        return (
-                          <option key={actId} value={actId}>
-                            {getActivityName(act)}
-                          </option>
-                        );
-                      })}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Rôle Fonctionnel *
-                </label>
-                <select
-                  value={formData.functionalRole}
-                  onChange={(e) =>
-                    setFormData({ ...formData, functionalRole: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                  required
-                >
-                  <option value="">Sélectionner un rôle</option>
-                  {getRoleOptions().map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Droits d'accès (RBAC) *
-                </label>
-                <select
-                  value={formData.projectRole}
-                  onChange={(e) =>
-                    setFormData({ ...formData, projectRole: e.target.value as ProjectRole })
-                  }
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                  required
-                >
-                  {Object.entries(PROJECT_ROLE_LABELS).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
-                >
-                  {editingAssignment ? "Modifier" : "Ajouter"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <ConfirmDialog
-        isOpen={deleteConfirm !== null}
-        title="Retirer le membre"
-        message={`Êtes-vous sûr de vouloir retirer "${deleteConfirm?.name}" de l'équipe ? Cette action est irréversible.`}
-        confirmLabel="Retirer"
-        cancelLabel="Annuler"
-        variant="danger"
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteConfirm(null)}
+      <AddMemberModal
+        isOpen={showAddModal}
+        onClose={handleCloseModal}
+        onSubmit={handleSubmit}
+        projectId={projectId}
+        project={project}
+        editingAssignment={editingAssignment}
       />
+
+      {/* Delete Confirmation */}
+      {deleteConfirm && (
+        <ConfirmDialog
+          isOpen={!!deleteConfirm}
+          title="Retirer le membre"
+          message={`Êtes-vous sûr de vouloir retirer ${deleteConfirm.name} de l'équipe ?`}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
     </div>
   );
 }

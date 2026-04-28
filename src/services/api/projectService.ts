@@ -39,14 +39,31 @@ export interface Localisation {
 
 export interface Bailleur {
   nom: string;
-  pourcentage: number;
+  montant: number;
+  devise: string; // USD, EUR, FCFA, GBP, etc.
+  pourcentage?: number; // Calculé automatiquement
+}
+
+export interface PartieFinancement {
+  nom: string;
+  montant: number;
+  devise: string;
+  pourcentage?: number;
 }
 
 export interface Financement {
   type: 'MOP' | 'PPP';
+  // Pour MOP
   budgetNational?: boolean;
+  budgetNationalMontant?: number;
+  budgetNationalDevise?: string;
   budgetNationalPct?: number;
   bailleurs?: Bailleur[];
+  // Pour PPP
+  partiesPubliques?: PartieFinancement[];
+  partiesPrivees?: PartieFinancement[];
+  // Taux de change
+  tauxChange?: Record<string, number>; // Ex: { "USD": 600, "EUR": 655 }
 }
 
 export interface Project {
