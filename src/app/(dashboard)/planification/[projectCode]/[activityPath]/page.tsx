@@ -17,8 +17,12 @@ import {
   FileText,
   Briefcase,
   Hammer,
+  BarChart3,
+  Settings,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import { getProjectById, type Project } from "@/lib/projectStore";
+import { getProjectById, getLeafActivities, type Project } from "@/lib/projectStore";
 import { planningService, type Planning, type CreatePlanningDto, type UpdatePlanningDto } from "@/services/api/planningService";
 import { toast } from "@/lib/toastStore";
 import { PlanningFormEtude } from "@/components/planning/PlanningFormEtude";
@@ -46,6 +50,7 @@ export default function ActivityPlanningPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showConfig, setShowConfig] = useState(true);
 
   // Informations de l'activité
   const [activityName, setActivityName] = useState("");
@@ -60,10 +65,8 @@ export default function ActivityPlanningPage() {
   const [budgetInitial, setBudgetInitial] = useState<Array<{ devise: string; montant: number; pourcentage?: number }>>([
     { devise: "FCFA", montant: 0, pourcentage: 100 }
   ]);
-  const [dateDebutInitiale, setDateDebutInitiale] = useState<string>("");
-  const [dateFinInitiale, setDateFinInitiale] = useState<string>("");
+  const [dateT0, setDateT0] = useState<string>(""); // Date de début globale de l'activité
   const [responsablePrincipal, setResponsablePrincipal] = useState("");
-  const [notes, setNotes] = useState("");
 
   // Données spécifiques (gérées par les sous-composants)
   const [etudeData, setEtudeData] = useState<any>(null);
@@ -98,9 +101,10 @@ export default function ActivityPlanningPage() {
         const existingPlanning = await planningService.getOne(projectCode, activityPath);
         setPlanning(existingPlanning);
         setIsEditMode(true);
+        setShowConfig(false);
         populateFormFromPlanning(existingPlanning);
-      } catch (error) {
-        // Pas de planification existante, mode création
+      } catch {
+        // 404 = pas de planification existante → mode création (normal)
         setIsEditMode(false);
       }
     } catch (error) {
@@ -112,42 +116,54 @@ export default function ActivityPlanningPage() {
   }
 
   function findActivityByPath(proj: Project, path: string) {
+    // Utiliser getLeafActivities pour trouver la feuille correspondante
+    const leaves = getLeafActivities(proj);
+    const leaf = leaves.find((l) => l.path === path);
+    if (leaf) {
+      return {
+        name: leaf.name,
+        type: leaf.type as any,
+      };
+    }
+
+    // Fallback : parsing manuel pour le cas 3 niveaux
     const parts = path.split(".");
-    if (parts.length < 3) return null;
+    if (parts.length >= 3) {
+      const [compId, scId, actId] = parts;
+      const comp = proj.components.find((c) => c.id === compId);
+      if (!comp) return null;
+      const sc = comp.sousComposants.find((s) => s.id === scId);
+      if (!sc) return null;
+      const actIndex = parseInt(actId.replace("A", "")) - 1;
+      const act = sc.activities[actIndex];
+      if (!act) return null;
+      return {
+        name: typeof act === "string" ? act : act.name,
+        type: (typeof act === "string" ? "travaux" : act.typeActivite) as any,
+      };
+    }
 
-    const [compId, scId, actId] = parts;
-    const comp = proj.components.find((c) => c.id === compId);
-    if (!comp) return null;
-
-    const sc = comp.sousComposants.find((s) => s.id === scId);
-    if (!sc) return null;
-
-    const actIndex = parseInt(actId.replace("A", "")) - 1;
-    const act = sc.activities[actIndex];
-    if (!act) return null;
-
-    return {
-      name: typeof act === "string" ? act : act.name,
-      type: (typeof act === "string" ? "travaux" : act.typeActivite) as any,
-    };
+    return null;
   }
 
   function populateFormFromPlanning(p: Planning) {
-    setHasEtudePrealable(p.hasEtudePrealable);
-    setHasPassation(p.hasPassation);
-    setHasExecution(p.hasExecution);
+    console.log("📋 Chargement de la planification existante:", p);
+    
+    setHasEtudePrealable(!!p.hasEtudePrealable);
+    setHasPassation(!!p.hasPassation);
+    setHasExecution(!!p.hasExecution);
     setBudgetInitial(p.budgetInitial || []);
-    setDateDebutInitiale(p.dateDebutInitiale ? new Date(p.dateDebutInitiale).toISOString().split("T")[0] : "");
-    setDateFinInitiale(p.dateFinInitiale ? new Date(p.dateFinInitiale).toISOString().split("T")[0] : "");
+    setDateT0(p.dateDebutInitiale ? new Date(p.dateDebutInitiale).toISOString().split("T")[0] : "");
     setResponsablePrincipal(p.responsablePrincipal || "");
-    setNotes(p.notes || "");
 
-    // Données spécifiques
-    if (p.hasEtudePrealable) {
-      setEtudeData({
+    // Données spécifiques - IMPORTANT : Charger immédiatement
+    if (p.hasEtudePrealable && p.livrables && p.livrables.length > 0) {
+      console.log("📦 Chargement des livrables:", p.livrables);
+      const etudeDataToSet = {
         livrables: p.livrables || [],
-        dateT0Etude: p.dateT0Etude ? new Date(p.dateT0Etude).toISOString().split("T")[0] : "",
-      });
+      };
+      setEtudeData(etudeDataToSet);
+      console.log("✅ EtudeData défini:", etudeDataToSet);
     }
     if (p.hasPassation) {
       setPassationData({
@@ -155,10 +171,13 @@ export default function ActivityPlanningPage() {
         etapesPassation: p.etapesPassation || [],
       });
     }
-    if (p.hasExecution) {
-      setExecutionData({
+    if (p.hasExecution && p.tachesExecution && p.tachesExecution.length > 0) {
+      console.log("🔧 Chargement des tâches d'exécution:", p.tachesExecution);
+      const executionDataToSet = {
         tachesExecution: p.tachesExecution || [],
-      });
+      };
+      setExecutionData(executionDataToSet);
+      console.log("✅ ExecutionData défini:", executionDataToSet);
     }
   }
 
@@ -178,6 +197,15 @@ export default function ActivityPlanningPage() {
     try {
       const budgetInitialTotal = budgetInitial.reduce((sum, b) => sum + b.montant, 0);
 
+      // Nettoyage des dates vides ("") pour éviter l'erreur Invalid Date sur le backend
+      const cleanDates = (arr: any[]) => arr.map(item => {
+        const cleaned = { ...item };
+        if (cleaned.dateDebut === "") cleaned.dateDebut = undefined;
+        if (cleaned.dateFin === "") cleaned.dateFin = undefined;
+        if (cleaned.dateEcheance === "") cleaned.dateEcheance = undefined;
+        return cleaned;
+      });
+
       const data: CreatePlanningDto | UpdatePlanningDto = {
         projectCode,
         activityPath,
@@ -188,32 +216,26 @@ export default function ActivityPlanningPage() {
         hasExecution,
         budgetInitial,
         budgetInitialTotal,
-        dateDebutInitiale: dateDebutInitiale ? new Date(dateDebutInitiale) : undefined,
-        dateFinInitiale: dateFinInitiale ? new Date(dateFinInitiale) : undefined,
-        delaiInitialMois: dateDebutInitiale && dateFinInitiale
-          ? Math.round(
-              (new Date(dateFinInitiale).getTime() - new Date(dateDebutInitiale).getTime()) /
-                (1000 * 60 * 60 * 24 * 30)
-            )
-          : undefined,
+        dateDebutInitiale: dateT0 ? new Date(dateT0) : undefined,
+        dateFinInitiale: undefined, // Sera calculée automatiquement depuis les livrables
+        delaiInitialMois: undefined, // Sera calculé automatiquement
         responsablePrincipal: responsablePrincipal || undefined,
-        notes: notes || undefined,
         // Données spécifiques
         ...(hasEtudePrealable && etudeData
           ? {
-              livrables: etudeData.livrables || [],
-              dateT0Etude: etudeData.dateT0Etude ? new Date(etudeData.dateT0Etude) : undefined,
+              livrables: cleanDates(etudeData.livrables || []),
+              dateT0Etude: dateT0 ? new Date(dateT0) : undefined, // Utiliser dateT0 global
             }
           : {}),
         ...(hasPassation && passationData
           ? {
               typePassation: passationData.typePassation,
-              etapesPassation: passationData.etapesPassation || [],
+              etapesPassation: cleanDates(passationData.etapesPassation || []),
             }
           : {}),
         ...(hasExecution && executionData
           ? {
-              tachesExecution: executionData.tachesExecution || [],
+              tachesExecution: cleanDates(executionData.tachesExecution || []),
             }
           : {}),
       };
@@ -222,13 +244,12 @@ export default function ActivityPlanningPage() {
         await planningService.update(projectCode, activityPath, data as UpdatePlanningDto);
         toast.success("Planification mise à jour");
       } else {
-        await planningService.create(data as CreatePlanningDto);
-        toast.success("Planification créée");
-        setIsEditMode(true);
+        const created = await planningService.create(data as CreatePlanningDto);
+        console.log("✅ Planification créée:", created);
+        toast.success("Planification créée avec succès");
       }
-
-      // Recharger
-      await loadData();
+      // Redirection automatique vers le Gantt pour voir les livrables créés/modifiés
+      router.push(`/planification/${projectCode}?activity=${encodeURIComponent(activityPath)}&t=${Date.now()}`);
     } catch (error: any) {
       console.error("Erreur sauvegarde:", error);
       toast.error(error.response?.data?.message || "Erreur lors de la sauvegarde");
@@ -309,6 +330,12 @@ export default function ActivityPlanningPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={`/planification/${projectCode}`}
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-inset)] text-[var(--text-secondary)] rounded-[var(--radius-md)] text-sm font-semibold hover:bg-[var(--bg-surface-hover)] transition-colors"
+            >
+              <BarChart3 size={16} /> Voir le Gantt
+            </Link>
             {isEditMode && (
               <button
                 onClick={handleDelete}
@@ -329,148 +356,70 @@ export default function ActivityPlanningPage() {
       </div>
 
       {/* CONTENT */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-5xl mx-auto space-y-6">
-          {/* Info Banner */}
-          <div className="flex gap-3 p-4 rounded-[var(--radius-lg)] bg-blue-500/10 border border-blue-500/20">
-            <AlertCircle size={18} className="text-blue-500 flex-shrink-0 mt-0.5" />
-            <div className="text-[12px] text-blue-600 dark:text-blue-400 leading-relaxed">
-              <strong>Planification de l'activité</strong> : Sélectionnez les types de planification nécessaires
-              (Étude, Passation, Exécution) et remplissez les informations correspondantes. Les données initiales
-              pourront être actualisées ultérieurement.
-            </div>
-          </div>
+      <div className={`flex-1 overflow-y-auto ${hasPassation ? 'px-3' : 'px-8'} py-6`}>
+        <div className={`${hasPassation ? 'max-w-full px-2' : 'max-w-5xl'} mx-auto space-y-6`}>
+          {/* Paramètres d'activité - Compact Layout */}
+          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] shadow-sm">
+            {/* Header / Toggle Config */}
+            <button 
+              onClick={() => setShowConfig(!showConfig)}
+              className="w-full flex items-center justify-between p-4 bg-[var(--bg-inset)] hover:bg-[var(--bg-surface-hover)] transition-colors rounded-t-[var(--radius-lg)]"
+            >
+              <div className="flex items-center gap-3">
+                <Settings size={18} className="text-[var(--accent)]" />
+                <span className="font-bold text-[14px] text-[var(--text-primary)]">Configuration de l'activité</span>
+                {!showConfig && (
+                  <div className="flex gap-2 ml-4">
+                    {hasEtudePrealable && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">Étude</span>}
+                    {hasPassation && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">Passation</span>}
+                    {hasExecution && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">Exécution</span>}
+                  </div>
+                )}
+              </div>
+              {showConfig ? <ChevronUp size={18} className="text-[var(--text-secondary)]" /> : <ChevronDown size={18} className="text-[var(--text-secondary)]" />}
+            </button>
 
-          {/* Types de Planification */}
-          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden">
-            <div className="p-5 border-b border-[var(--border-subtle)]">
-              <h2 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
-                <CheckCircle2 size={16} />
-                Types de Planification
-              </h2>
-              <p className="text-[11px] text-[var(--text-secondary)] mt-1">
-                Sélectionnez au moins un type de planification pour cette activité
-              </p>
-            </div>
-            <div className="p-5 grid grid-cols-3 gap-4">
-              <label className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] border-2 border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasEtudePrealable}
-                  onChange={(e) => setHasEtudePrealable(e.target.checked)}
-                  className="mt-1 w-4 h-4 accent-[var(--accent)]"
-                />
-                <div>
-                  <div className="text-[13px] font-bold text-[var(--text-primary)]">Étude Préalable</div>
-                  <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                    Livrables, rapports, pondération
+            {showConfig && (
+              <div className="p-5 border-t border-[var(--border-subtle)] grid grid-cols-1 md:grid-cols-12 gap-8">
+                {/* Left side: Types */}
+                <div className="md:col-span-4 space-y-3">
+                  <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Phases à planifier</label>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-3 p-2.5 rounded-[var(--radius-md)] border border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer bg-[var(--bg-surface)]">
+                      <input type="checkbox" checked={hasEtudePrealable} onChange={(e) => setHasEtudePrealable(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
+                      <span className="text-[13px] font-medium text-[var(--text-primary)]">Étude Préalable</span>
+                    </label>
+                    <label className="flex items-center gap-3 p-2.5 rounded-[var(--radius-md)] border border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer bg-[var(--bg-surface)]">
+                      <input type="checkbox" checked={hasPassation} onChange={(e) => setHasPassation(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
+                      <span className="text-[13px] font-medium text-[var(--text-primary)]">Passation</span>
+                    </label>
+                    <label className="flex items-center gap-3 p-2.5 rounded-[var(--radius-md)] border border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer bg-[var(--bg-surface)]">
+                      <input type="checkbox" checked={hasExecution} onChange={(e) => setHasExecution(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
+                      <span className="text-[13px] font-medium text-[var(--text-primary)]">Exécution</span>
+                    </label>
                   </div>
                 </div>
-              </label>
 
-              <label className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] border-2 border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasPassation}
-                  onChange={(e) => setHasPassation(e.target.checked)}
-                  className="mt-1 w-4 h-4 accent-[var(--accent)]"
-                />
-                <div>
-                  <div className="text-[13px] font-bold text-[var(--text-primary)]">Passation</div>
-                  <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                    DAO, appel d'offres, étapes
+                {/* Right side: Config */}
+                <div className="md:col-span-8">
+                  <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Informations Générales</label>
+                  <div className="grid grid-cols-2 gap-5 bg-[var(--bg-inset)] p-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)]">
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-2">Budget Initial</label>
+                      <BudgetMultiDevise budgets={budgetInitial} onChange={setBudgetInitial} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-2">Date T0 (Début global)</label>
+                      <input type="date" value={dateT0} onChange={(e) => setDateT0(e.target.value)} className="w-full px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[12px] focus:outline-none focus:border-[var(--accent)]" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-2">Responsable</label>
+                      <input type="text" value={responsablePrincipal} onChange={(e) => setResponsablePrincipal(e.target.value)} placeholder="Nom du responsable" className="w-full px-3 py-1.5 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[12px] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)]" />
+                    </div>
                   </div>
                 </div>
-              </label>
-
-              <label className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] border-2 border-[var(--border-default)] hover:border-[var(--accent)] transition-colors cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasExecution}
-                  onChange={(e) => setHasExecution(e.target.checked)}
-                  className="mt-1 w-4 h-4 accent-[var(--accent)]"
-                />
-                <div>
-                  <div className="text-[13px] font-bold text-[var(--text-primary)]">Exécution</div>
-                  <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                    Tâches, quantités, prix
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Données Communes */}
-          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden">
-            <div className="p-5 border-b border-[var(--border-subtle)]">
-              <h2 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
-                <DollarSign size={16} />
-                Informations Générales
-              </h2>
-            </div>
-            <div className="p-5 space-y-5">
-              {/* Budget Multi-Devises */}
-              <div>
-                <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
-                  Budget Initial
-                </label>
-                <BudgetMultiDevise budgets={budgetInitial} onChange={setBudgetInitial} />
               </div>
-
-              {/* Dates */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
-                    Date de Début
-                  </label>
-                  <input
-                    type="date"
-                    value={dateDebutInitiale}
-                    onChange={(e) => setDateDebutInitiale(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[13px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
-                    Date de Fin
-                  </label>
-                  <input
-                    type="date"
-                    value={dateFinInitiale}
-                    onChange={(e) => setDateFinInitiale(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[13px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Responsable */}
-              <div>
-                <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
-                  Responsable Principal
-                </label>
-                <input
-                  type="text"
-                  value={responsablePrincipal}
-                  onChange={(e) => setResponsablePrincipal(e.target.value)}
-                  placeholder="ID ou nom du responsable"
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-                />
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-2">
-                  Notes
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Notes et observations..."
-                  rows={3}
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] transition-colors resize-none"
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Formulaires Spécifiques */}
@@ -478,7 +427,7 @@ export default function ActivityPlanningPage() {
             <PlanningFormEtude
               data={etudeData}
               onChange={setEtudeData}
-              dateDebutInitiale={dateDebutInitiale}
+              dateT0={dateT0}
             />
           )}
 
@@ -487,7 +436,11 @@ export default function ActivityPlanningPage() {
           )}
 
           {hasExecution && (
-            <PlanningFormExecution data={executionData} onChange={setExecutionData} />
+            <PlanningFormExecution
+              data={executionData}
+              onChange={setExecutionData}
+              dateT0={dateT0}
+            />
           )}
         </div>
       </div>

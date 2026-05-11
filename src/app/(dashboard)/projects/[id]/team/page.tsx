@@ -10,6 +10,8 @@ import {
   Trash2,
   Search,
   Edit2,
+  Settings,
+  Layers,
 } from "lucide-react";
 import { getProjectById } from "@/lib/projectStore";
 import { getActivityName } from "@/lib/projectStore";
@@ -21,7 +23,7 @@ import {
   type User,
   type TeamAssignment,
 } from "@/lib/userStore";
-import { type ProjectRole, PROJECT_ROLE_LABELS } from "@/lib/rbacStore";
+import { type ProjectRole, PROJECT_ROLE_LABELS, PROJECT_ROLE_COLORS } from "@/lib/rbacStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import AddMemberModal, { type MemberFormData } from "@/components/team/AddMemberModal";
@@ -83,13 +85,8 @@ export default function ProjectTeamPage() {
   };
 
   const handleSubmit = async (data: MemberFormData) => {
-    if (!data.userId && !data.newUserData) {
-      toast.error("Veuillez sélectionner ou créer un utilisateur");
-      return;
-    }
-
-    if (!data.functionalRole) {
-      toast.error("Veuillez saisir le rôle fonctionnel");
+    if (!data.userId) {
+      toast.error("Veuillez sélectionner un utilisateur");
       return;
     }
 
@@ -99,27 +96,21 @@ export default function ProjectTeamPage() {
         await removeTeamAssignment(editingAssignment._id);
         await addTeamAssignment({
           projectId,
-          userId: data.userId || "pending", // Si nouvel utilisateur, marquer comme "pending"
-          functionalRole: data.functionalRole,
+          userId: data.userId,
           projectRole: data.projectRole,
           level: data.level,
           entityId: data.entityId,
           entityName: data.entityName,
-          permissions: data.permissions,
-          newUserData: data.newUserData,
         });
         toast.success("Affectation modifiée");
       } else {
         await addTeamAssignment({
           projectId,
-          userId: data.userId || "pending",
-          functionalRole: data.functionalRole,
+          userId: data.userId,
           projectRole: data.projectRole,
           level: data.level,
           entityId: data.entityId,
           entityName: data.entityName,
-          permissions: data.permissions,
-          newUserData: data.newUserData,
         });
         toast.success("Membre ajouté à l'équipe");
       }
@@ -168,7 +159,8 @@ export default function ProjectTeamPage() {
   const filteredAssignments = (teamAssignments || []).filter((assignment) => {
     const user = allUsers.find(u => u.id === assignment.userId);
     if (!user) return false;
-    const searchStr = `${user.firstName} ${user.lastName} ${assignment.functionalRole} ${assignment.entityName || ""}`.toLowerCase();
+    const roleLabel = PROJECT_ROLE_LABELS[assignment.projectRole] || assignment.projectRole;
+    const searchStr = `${user.firstName} ${user.lastName} ${roleLabel} ${assignment.entityName || ""}`.toLowerCase();
     return searchStr.includes(searchQuery.toLowerCase());
   });
 
@@ -183,7 +175,18 @@ export default function ProjectTeamPage() {
   return (
     <div className="flex flex-col h-full">
       {/* HEADER */}
-      <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] px-8 pt-5 pb-4 flex-shrink-0">
+      <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] px-8 pt-4 pb-4 flex-shrink-0">
+        {/* Breadcrumb en haut */}
+        <div className="mb-3">
+          <Link
+            href={`/projects/${projectId}`}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors inline-flex"
+          >
+            <ChevronLeft size={14} /> Retour au projet
+          </Link>
+        </div>
+        
+        {/* Titre */}
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-[var(--radius-lg)] bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-[var(--shadow-sm)] flex-shrink-0">
@@ -207,33 +210,32 @@ export default function ProjectTeamPage() {
                   {project.code}
                 </span>
               </h1>
-              <div className="text-[11px] text-[var(--text-secondary)] font-medium mt-0.5">
-                Équipe Projet • {project.description}
-              </div>
             </div>
           </div>
-          <Link
-            href={`/projects/${projectId}/team`}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
-          >
-            <Users size={16} />
-            Équipe projet
-          </Link>
         </div>
       </div>
 
       {/* NAV BAR */}
       <div className="flex items-center px-8 bg-[var(--bg-surface)] border-b border-[var(--border-default)] flex-shrink-0">
-        <Link
-          href={`/projects/${projectId}`}
-          className="flex items-center gap-1.5 py-3 pr-4 mr-1 text-[11px] font-bold text-[var(--text-secondary)] border-r border-[var(--border-default)] hover:text-[var(--accent)] transition-colors"
-        >
-          <ChevronLeft size={14} /> Retour au projet
-        </Link>
-        <div className="flex gap-0.5 ml-2">
-          <button className="py-3 px-4 text-[13px] font-bold border-b-2 border-[var(--text-primary)] text-[var(--text-primary)] whitespace-nowrap">
-            Équipe
-          </button>
+        <div className="flex gap-0.5">
+          <Link
+            href={`/projects/${projectId}?tab=info`}
+            className="py-3 px-4 text-[13px] font-medium border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap flex items-center gap-2"
+          >
+            <Settings size={14} /> Informations
+          </Link>
+          <Link
+            href={`/projects/${projectId}?tab=structure`}
+            className="py-3 px-4 text-[13px] font-medium border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap flex items-center gap-2"
+          >
+            <Layers size={14} /> Structure & Activités
+          </Link>
+          <Link
+            href={`/projects/${projectId}/team`}
+            className="py-3 px-4 text-[13px] font-bold border-b-2 border-[var(--text-primary)] text-[var(--text-primary)] transition-colors whitespace-nowrap flex items-center gap-2"
+          >
+            <Users size={14} /> Équipe
+          </Link>
         </div>
       </div>
 
@@ -313,14 +315,9 @@ export default function ProjectTeamPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20 w-fit">
-                          {assignment.functionalRole}
-                        </span>
-                        <span className="text-[10px] text-[var(--text-tertiary)] font-medium">
-                          {PROJECT_ROLE_LABELS[assignment.projectRole]}
-                        </span>
-                      </div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold w-fit ${PROJECT_ROLE_COLORS[assignment.projectRole]?.bg || ''} ${PROJECT_ROLE_COLORS[assignment.projectRole]?.text || ''} border ${PROJECT_ROLE_COLORS[assignment.projectRole]?.border || ''}`}>
+                        {PROJECT_ROLE_LABELS[assignment.projectRole]}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm text-[var(--text-secondary)]">

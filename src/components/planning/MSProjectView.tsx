@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Save, Check, X, Calendar } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Save, X, Calendar } from "lucide-react";
 import type { Project } from "@/lib/projectStore";
 import type { Planning } from "@/services/api/planningService";
 import { planningService } from "@/services/api/planningService";
@@ -35,24 +35,58 @@ interface TaskRow {
   canAddSubtask?: boolean;
 }
 
-const ACTIVITY_COLORS = {
-  travaux: "#3b82f6",
-  fourniture: "#f59e0b",
-  services: "#10b981",
-  etudes: "#8b5cf6",
-  pi: "#ec4899",
+interface WeekGroup {
+  weekStart: Date;
+  days: Date[];
+}
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+const DAY_WIDTH = 24;
+const ROW_HEIGHT = 28;
+const HEADER_HEIGHT = 44;
+const SUB_HEADER_HEIGHT = 22;
+const TABLE_COLUMNS = "32px 32px 1fr 60px 80px 80px 90px 42px";
+const FRENCH_DAY_LETTERS = ["D", "L", "M", "M", "J", "V", "S"];
+
+const ACTIVITY_COLORS: Record<string, string> = {
+  travaux: "#4472C4",
+  fourniture: "#ED7D31",
+  services: "#70AD47",
+  etudes: "#7030A0",
+  pi: "#E84C88",
 };
 
+const MSP_BAR_BLUE = "#4472C4";
+const MSP_SUMMARY_COLOR = "#555555";
+const MSP_TODAY_COLOR = "#70AD47";
+
+// ─── Component ──────────────────────────────────────────────────────────────
 export function MSProjectView({ project, plannings, onActivityClick, onRefresh }: MSProjectViewProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    const initialExpanded = new Set<string>();
+    project.components.forEach((comp) => {
+      initialExpanded.add(`comp-${comp.id}`);
+    });
+    return initialExpanded;
+  });
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
   const [timelineStart, setTimelineStart] = useState<Date>(new Date());
   const [timelineEnd, setTimelineEnd] = useState<Date>(new Date());
-  const [monthsToShow, setMonthsToShow] = useState<Date[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [deletedTaskIds, setDeletedTaskIds] = useState<Set<string>>(new Set());
 
+  // Refs pour synchroniser le scroll
+  const leftBodyRef = useRef<HTMLDivElement>(null);
+  const rightBodyRef = useRef<HTMLDivElement>(null);
+  const rightHeaderRef = useRef<HTMLDivElement>(null);
+
+  // État pour le redimensionnement
+  const [leftWidth, setLeftWidth] = useState(42);
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // ─── Build task tree ────────────────────────────────────────────────────
   useEffect(() => {
     buildTaskTree();
     calculateTimeline();
@@ -61,66 +95,200 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
   const buildTaskTree = () => {
     const rows: TaskRow[] = [];
 
-    // Parcourir directement les activités (sans afficher projet/composante/sous-composante)
-    project.components.forEach((comp) => {
-      const compId = comp.id;
-      
-      comp.sousComposants.forEach((sc) => {
-        sc.activities.forEach((act, actIdx) => {
-          const activityPath = `${compId}.${sc.id}.A${actIdx + 1}`;
-          const planning = plannings.find((p) => p.activityPath === activityPath);
-          const actName = typeof act === "string" ? act : act.name;
-          const actType = typeof act === "string" ? "travaux" : act.typeActivite;
+    /** Recherche un planning par son activityPath */
+    const findPlanning = (path: string) => plannings.find((p) => p.activityPath === path);
 
-          // Afficher l'activité au niveau 0 (racine)
+    /** Collecte tous les leaf-paths sous un composant pour agréger les dates */
+    const getLeafPathsForComponent = (comp: typeof project.components[0]): string[] => {
+      const paths: string[] = [];
+      const hasSC = comp.sousComposants && comp.sousComposants.length > 0;
+      if (!hasSC) {
+        // Composant seul = activité
+        paths.push(comp.id);
+      } else {
+        comp.sousComposants.forEach((sc) => {
+          const hasAct = sc.activities && sc.activities.length > 0;
+          if (!hasAct) {
+            paths.push(`${comp.id}.${sc.id}`);
+          } else {
+            sc.activities.forEach((_, idx) => paths.push(`${comp.id}.${sc.id}.A${idx + 1}`));
+          }
+        });
+      }
+      return paths;
+    };
+
+    /** Collecte les leaf-paths sous un sous-composant */
+    const getLeafPathsForSC = (compId: string, sc: typeof project.components[0]['sousComposants'][0]): string[] => {
+      const hasAct = sc.activities && sc.activities.length > 0;
+      if (!hasAct) return [`${compId}.${sc.id}`];
+      return sc.activities.map((_, idx) => `${compId}.${sc.id}.A${idx + 1}`);
+    };
+
+    /** Aggrège les dates de tous les leaf-paths */
+    const aggregateDates = (paths: string[]) => {
+      let minDate: Date | undefined;
+      let maxDate: Date | undefined;
+      let totalDuree = 0;
+
+      paths.forEach((path) => {
+        const planning = findPlanning(path);
+        if (planning) {
+          const debut = planning.dateDebutActualisee || planning.dateDebutInitiale;
+          const fin = planning.dateFinActualisee || planning.dateFinInitiale;
+          if (debut) {
+            const d = new Date(debut);
+            if (!minDate || d < minDate) minDate = d;
+          }
+          if (fin) {
+            const f = new Date(fin);
+            if (!maxDate || f > maxDate) maxDate = f;
+          }
+          totalDuree += planning.delaiActualiseMois || planning.delaiInitialMois || 0;
+        }
+      });
+
+      return {
+        dateDebut: minDate ? minDate.toISOString().split("T")[0] : undefined,
+        dateFin: maxDate ? maxDate.toISOString().split("T")[0] : undefined,
+        duree: totalDuree,
+      };
+    };
+
+    /** Crée une ligne "activity" planifiable à partir d'un planning */
+    const makeActivityRow = (
+      activityPath: string,
+      name: string,
+      actType: string,
+      level: number,
+      parentId: string,
+    ): TaskRow => {
+      const planning = findPlanning(activityPath);
+      return {
+        id: activityPath,
+        level,
+        name,
+        type: "activity",
+        activityPath,
+        activityType: actType,
+        hasChildren: !!(planning?.tachesExecution && planning.tachesExecution.length > 0),
+        isExpanded: expandedIds.has(activityPath),
+        planning,
+        dateDebut: planning?.dateDebutActualisee || planning?.dateDebutInitiale
+          ? new Date(planning.dateDebutActualisee || planning.dateDebutInitiale!).toISOString().split("T")[0]
+          : undefined,
+        dateFin: planning?.dateFinActualisee || planning?.dateFinInitiale
+          ? new Date(planning.dateFinActualisee || planning.dateFinInitiale!).toISOString().split("T")[0]
+          : undefined,
+        duree: planning?.delaiActualiseMois || planning?.delaiInitialMois,
+        responsable: planning?.responsablePrincipal,
+        budget: planning?.budgetActualiseTotal || planning?.budgetInitialTotal,
+        parentId,
+        canAddSubtask: true,
+      };
+    };
+
+    /** Ajoute les sous-tâches d'un planning */
+    const addSubtasks = (activityPath: string, planning: Planning | undefined, level: number) => {
+      if (expandedIds.has(activityPath) && planning?.tachesExecution) {
+        planning.tachesExecution.forEach((tache, tIdx) => {
           rows.push({
-            id: activityPath,
-            level: 0,
-            name: `${comp.name} > ${sc.name} > ${actName}`,
-            type: "activity",
-            activityPath,
-            activityType: actType,
-            hasChildren: !!(planning?.tachesExecution && planning.tachesExecution.length > 0),
-            isExpanded: expandedIds.has(activityPath),
-            planning,
-            dateDebut: planning?.dateDebutActualisee || planning?.dateDebutInitiale
-              ? new Date(planning.dateDebutActualisee || planning.dateDebutInitiale!).toISOString().split("T")[0]
-              : undefined,
-            dateFin: planning?.dateFinActualisee || planning?.dateFinInitiale
-              ? new Date(planning.dateFinActualisee || planning.dateFinInitiale!).toISOString().split("T")[0]
-              : undefined,
-            duree: planning?.delaiActualiseMois || planning?.delaiInitialMois,
-            responsable: planning?.responsablePrincipal,
-            budget: planning?.budgetActualiseTotal || planning?.budgetInitialTotal,
-            canAddSubtask: true,
+            id: `${activityPath}.T${tIdx}`,
+            level,
+            name: tache.designation,
+            type: "subtask",
+            hasChildren: false,
+            isExpanded: false,
+            parentId: activityPath,
+            dateDebut: tache.dateDebut ? new Date(tache.dateDebut).toISOString().split("T")[0] : undefined,
+            dateFin: tache.dateFin ? new Date(tache.dateFin).toISOString().split("T")[0] : undefined,
+            duree: tache.dureeJours,
+            responsable: tache.responsable,
+            budget: (tache.quantite || 0) * (tache.prixUnitaire || 0),
           });
+        });
+      }
+    };
 
-          // Sous-tâches (si planification exécution)
-          if (expandedIds.has(activityPath) && planning?.tachesExecution) {
-            planning.tachesExecution.forEach((tache, tIdx) => {
-              rows.push({
-                id: `${activityPath}.T${tIdx}`,
-                level: 1,
-                name: tache.designation,
-                type: "subtask",
-                hasChildren: false,
-                isExpanded: false,
-                parentId: activityPath,
-                dateDebut: tache.dateDebut ? new Date(tache.dateDebut).toISOString().split("T")[0] : undefined,
-                dateFin: tache.dateFin ? new Date(tache.dateFin).toISOString().split("T")[0] : undefined,
-                duree: tache.dureeJours,
-                responsable: tache.responsable,
-                budget: (tache.quantite || 0) * (tache.prixUnitaire || 0),
-              });
+    // ── Construire l'arbre ──
+    project.components.forEach((comp) => {
+      const compNodeId = `comp-${comp.id}`;
+      const hasSC = comp.sousComposants && comp.sousComposants.length > 0;
+      const leafPaths = getLeafPathsForComponent(comp);
+      const compDates = aggregateDates(leafPaths);
+
+      if (!hasSC) {
+        // ════ CAS 1 : Composant seul = activité planifiable ════
+        const activityPath = comp.id;
+        const actRow = makeActivityRow(activityPath, comp.name, comp.typeActivite || 'travaux', 0, '');
+        rows.push(actRow);
+        addSubtasks(activityPath, actRow.planning, 1);
+      } else {
+        // ════ Composant avec enfants = noeud de regroupement ════
+        rows.push({
+          id: compNodeId,
+          level: 0,
+          name: comp.name,
+          type: "component",
+          hasChildren: true,
+          isExpanded: expandedIds.has(compNodeId),
+          parentId: undefined,
+          dateDebut: compDates.dateDebut,
+          dateFin: compDates.dateFin,
+          duree: compDates.duree,
+        });
+
+        if (!expandedIds.has(compNodeId)) return;
+
+        comp.sousComposants.forEach((sc) => {
+          const scNodeId = `sc-${comp.id}.${sc.id}`;
+          const hasAct = sc.activities && sc.activities.length > 0;
+
+          if (!hasAct) {
+            // ════ CAS 2 : Sous-composant sans activités = activité planifiable ════
+            const activityPath = `${comp.id}.${sc.id}`;
+            const actRow = makeActivityRow(activityPath, sc.name, sc.typeActivite || 'travaux', 1, compNodeId);
+            rows.push(actRow);
+            addSubtasks(activityPath, actRow.planning, 2);
+          } else {
+            // ════ Sous-composant avec activités = noeud de regroupement ════
+            const scLeafPaths = getLeafPathsForSC(comp.id, sc);
+            const scDates = aggregateDates(scLeafPaths);
+
+            rows.push({
+              id: scNodeId,
+              level: 1,
+              name: sc.name,
+              type: "subcomponent",
+              hasChildren: true,
+              isExpanded: expandedIds.has(scNodeId),
+              parentId: compNodeId,
+              dateDebut: scDates.dateDebut,
+              dateFin: scDates.dateFin,
+              duree: scDates.duree,
+            });
+
+            if (!expandedIds.has(scNodeId)) return;
+
+            // ════ CAS 3 : Activités explicites ════
+            sc.activities.forEach((act, actIdx) => {
+              const activityPath = `${comp.id}.${sc.id}.A${actIdx + 1}`;
+              const actName = typeof act === "string" ? act : act.name;
+              const actType = typeof act === "string" ? "travaux" : act.typeActivite;
+
+              const actRow = makeActivityRow(activityPath, actName, actType, 2, scNodeId);
+              rows.push(actRow);
+              addSubtasks(activityPath, actRow.planning, 3);
             });
           }
         });
-      });
+      }
     });
 
     setTasks(rows);
   };
 
+  // ─── Timeline calculation ─────────────────────────────────────────────
   const calculateTimeline = () => {
     let minDate = new Date();
     let maxDate = new Date();
@@ -129,7 +297,6 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
     plannings.forEach((p) => {
       const debut = p.dateDebutActualisee || p.dateDebutInitiale;
       const fin = p.dateFinActualisee || p.dateFinInitiale;
-
       if (debut) {
         const d = new Date(debut);
         if (!hasData || d < minDate) minDate = d;
@@ -148,41 +315,123 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
       maxDate.setMonth(maxDate.getMonth() + 12);
     }
 
-    minDate.setMonth(minDate.getMonth() - 1);
-    maxDate.setMonth(maxDate.getMonth() + 2);
+    // Extend range a bit
+    minDate = new Date(minDate);
+    minDate.setDate(minDate.getDate() - 14);
+    maxDate = new Date(maxDate);
+    maxDate.setDate(maxDate.getDate() + 30);
+
+    // Align to Monday
+    const startDay = minDate.getDay();
+    const daysToMonday = startDay === 0 ? 1 : (startDay === 1 ? 0 : 8 - startDay);
+    minDate.setDate(minDate.getDate() - (startDay === 0 ? 6 : startDay - 1));
+
+    minDate.setHours(0, 0, 0, 0);
+    maxDate.setHours(0, 0, 0, 0);
 
     setTimelineStart(minDate);
     setTimelineEnd(maxDate);
-
-    const months: Date[] = [];
-    const current = new Date(minDate);
-    while (current <= maxDate) {
-      months.push(new Date(current));
-      current.setMonth(current.getMonth() + 1);
-    }
-    setMonthsToShow(months);
   };
 
+  // ─── Computed days & weeks ────────────────────────────────────────────
+  const { allDays, weeks, todayIndex } = useMemo(() => {
+    const days: Date[] = [];
+    const current = new Date(timelineStart);
+    current.setHours(0, 0, 0, 0);
+
+    while (current <= timelineEnd) {
+      days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    // Group by weeks
+    const weekGroups: WeekGroup[] = [];
+    let currentWeek: WeekGroup | null = null;
+    days.forEach((day) => {
+      const dow = day.getDay();
+      if (!currentWeek || dow === 1) {
+        currentWeek = { weekStart: new Date(day), days: [] };
+        weekGroups.push(currentWeek);
+      }
+      currentWeek.days.push(day);
+    });
+
+    // Today index
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tIdx = days.findIndex(
+      (d) => d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
+    );
+
+    return { allDays: days, weeks: weekGroups, todayIndex: tIdx };
+  }, [timelineStart, timelineEnd]);
+
+  const totalGanttWidth = allDays.length * DAY_WIDTH;
+
+  // ─── Handlers ─────────────────────────────────────────────────────────
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
+  // Scroll sync: left body ↔ right body (vertical only)
+  const syncingRef = useRef(false);
+
+  const handleLeftScroll = () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    if (leftBodyRef.current && rightBodyRef.current) {
+      rightBodyRef.current.scrollTop = leftBodyRef.current.scrollTop;
+    }
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  };
+
+  const handleRightScroll = () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    if (rightBodyRef.current && leftBodyRef.current) {
+      leftBodyRef.current.scrollTop = rightBodyRef.current.scrollTop;
+    }
+    // Sync Gantt header horizontal scroll
+    if (rightBodyRef.current && rightHeaderRef.current) {
+      rightHeaderRef.current.scrollLeft = rightBodyRef.current.scrollLeft;
+    }
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  };
+
+  // Resizer
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      if (pct >= 20 && pct <= 80) setLeftWidth(pct);
+    };
+    const handleMouseUp = () => setIsResizing(false);
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // ─── Cell editing ─────────────────────────────────────────────────────
   const handleCellEdit = (rowId: string, field: string, value: any) => {
     setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === rowId) {
-          return { ...task, [field]: value };
-        }
-        return task;
-      })
+      prev.map((t) => (t.id === rowId ? { ...t, [field]: value } : t))
     );
     setHasChanges(true);
   };
@@ -190,12 +439,11 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
   const handleAddSubtask = (parentActivityPath: string) => {
     const newTaskId = `${parentActivityPath}.T${Date.now()}`;
     const parentTask = tasks.find((t) => t.id === parentActivityPath);
-    
     if (!parentTask) return;
 
     const newTask: TaskRow = {
       id: newTaskId,
-      level: 1,
+      level: 3,
       name: "Nouvelle tâche",
       type: "subtask",
       hasChildren: false,
@@ -208,11 +456,8 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
       duree: 1,
     };
 
-    // Insérer après la dernière sous-tâche du parent ou après le parent
     const parentIndex = tasks.findIndex((t) => t.id === parentActivityPath);
     let insertIndex = parentIndex + 1;
-    
-    // Trouver la dernière sous-tâche
     for (let i = parentIndex + 1; i < tasks.length; i++) {
       if (tasks[i].parentId === parentActivityPath) {
         insertIndex = i + 1;
@@ -222,42 +467,35 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
     }
 
     setTasks((prev) => {
-      const newTasks = [...prev];
-      newTasks.splice(insertIndex, 0, newTask);
-      return newTasks;
+      const next = [...prev];
+      next.splice(insertIndex, 0, newTask);
+      return next;
     });
 
-    // Expand parent
-    if (!expandedIds.has(parentActivityPath)) {
-      toggleExpand(parentActivityPath);
-    }
-
+    if (!expandedIds.has(parentActivityPath)) toggleExpand(parentActivityPath);
     setHasChanges(true);
   };
 
   const handleDeleteTask = (taskId: string) => {
     if (!confirm("Supprimer cette tâche ?")) return;
-    
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     setDeletedTaskIds((prev) => new Set(prev).add(taskId));
     setHasChanges(true);
   };
 
+  // ─── Save ─────────────────────────────────────────────────────────────
   const handleSaveChanges = async () => {
     try {
-      // Grouper les modifications par activité
-      const modifiedActivities = new Map<string, { 
-        planning: Planning; 
+      const modifiedActivities = new Map<string, {
+        planning: Planning;
         subtasks: TaskRow[];
         activityTask?: TaskRow;
       }>();
-      
-      // Collecter toutes les sous-tâches et activités modifiées
+
       tasks.forEach((task) => {
         if (task.type === "activity" && task.activityPath) {
           const planning = plannings.find((p) => p.activityPath === task.activityPath);
           if (!planning) return;
-
           if (!modifiedActivities.has(task.activityPath)) {
             modifiedActivities.set(task.activityPath, { planning, subtasks: [], activityTask: task });
           } else {
@@ -266,7 +504,6 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
         } else if (task.type === "subtask" && task.parentId) {
           const planning = plannings.find((p) => p.activityPath === task.parentId);
           if (!planning) return;
-
           if (!modifiedActivities.has(task.parentId)) {
             modifiedActivities.set(task.parentId, { planning, subtasks: [] });
           }
@@ -274,16 +511,13 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
         }
       });
 
-      // Sauvegarder chaque activité modifiée
       for (const [activityPath, { planning, subtasks, activityTask }] of modifiedActivities.entries()) {
         const updateData: any = {};
-
-        // Mettre à jour les champs de l'activité si modifiés
         if (activityTask) {
-          if (activityTask.dateDebut !== (planning.dateDebutActualisee || planning.dateDebutInitiale)?.toString().split('T')[0]) {
+          if (activityTask.dateDebut !== (planning.dateDebutActualisee || planning.dateDebutInitiale)?.toString().split("T")[0]) {
             updateData.dateDebutActualisee = activityTask.dateDebut ? new Date(activityTask.dateDebut) : undefined;
           }
-          if (activityTask.dateFin !== (planning.dateFinActualisee || planning.dateFinInitiale)?.toString().split('T')[0]) {
+          if (activityTask.dateFin !== (planning.dateFinActualisee || planning.dateFinInitiale)?.toString().split("T")[0]) {
             updateData.dateFinActualisee = activityTask.dateFin ? new Date(activityTask.dateFin) : undefined;
           }
           if (activityTask.duree !== (planning.delaiActualiseMois || planning.delaiInitialMois)) {
@@ -297,15 +531,12 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
           }
         }
 
-        // Mettre à jour les tâches d'exécution
         if (subtasks.length > 0 || (planning.tachesExecution && planning.tachesExecution.length > 0)) {
           const tachesExecution = subtasks.map((st, idx) => {
-            // Extraire l'index de la tâche depuis l'ID si c'est une tâche existante
-            const taskIdMatch = st.id.match(/\.T(\d+)$/);
-            const taskNumber = taskIdMatch ? parseInt(taskIdMatch[1]) + 1 : idx + 1;
-            
+            const match = st.id.match(/\.T(\d+)$/);
+            const num = match ? parseInt(match[1]) + 1 : idx + 1;
             return {
-              numero: `T${taskNumber}`,
+              numero: `T${num}`,
               designation: st.name,
               dateDebut: st.dateDebut ? new Date(st.dateDebut) : undefined,
               dateFin: st.dateFin ? new Date(st.dateFin) : undefined,
@@ -315,28 +546,21 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
               prixUnitaire: st.budget || 0,
             };
           });
-
           updateData.tachesExecution = tachesExecution;
         }
 
-        // Envoyer la mise à jour si des changements existent
         if (Object.keys(updateData).length > 0) {
           await planningService.update(project.code, activityPath, updateData);
         }
       }
 
-      // Gérer les activités dont toutes les tâches ont été supprimées
       for (const planning of plannings) {
         if (planning.tachesExecution && planning.tachesExecution.length > 0) {
-          const hasRemainingTasks = tasks.some(
+          const hasRemaining = tasks.some(
             (t) => t.type === "subtask" && t.parentId === planning.activityPath
           );
-          
-          if (!hasRemainingTasks && !modifiedActivities.has(planning.activityPath)) {
-            // Toutes les tâches ont été supprimées
-            await planningService.update(project.code, planning.activityPath, {
-              tachesExecution: [],
-            });
+          if (!hasRemaining && !modifiedActivities.has(planning.activityPath)) {
+            await planningService.update(project.code, planning.activityPath, { tachesExecution: [] });
           }
         }
       }
@@ -351,116 +575,208 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
     }
   };
 
+  // ─── Bar position (pixel-based) ──────────────────────────────────────
   const calculateBarPosition = (dateDebut?: string, dateFin?: string) => {
-    if (!dateDebut || !dateFin) return null;
+    if (!dateDebut || !dateFin || allDays.length === 0) return null;
 
     const debut = new Date(dateDebut);
     const fin = new Date(dateFin);
+    debut.setHours(0, 0, 0, 0);
+    fin.setHours(0, 0, 0, 0);
 
-    const totalDays = (timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24);
-    const startDays = (debut.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24);
-    const durationDays = (fin.getTime() - debut.getTime()) / (1000 * 60 * 60 * 24);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const startOffset = Math.floor((debut.getTime() - timelineStart.getTime()) / msPerDay);
+    const duration = Math.max(1, Math.ceil((fin.getTime() - debut.getTime()) / msPerDay));
 
-    const left = (startDays / totalDays) * 100;
-    const width = (durationDays / totalDays) * 100;
-
-    return { left: `${Math.max(0, left)}%`, width: `${Math.max(1, width)}%` };
+    return {
+      left: Math.max(0, startOffset) * DAY_WIDTH,
+      width: Math.max(DAY_WIDTH, duration * DAY_WIDTH),
+    };
   };
 
-  const getRowStyle = (level: number, type: string) => {
-    const baseStyle = "hover:bg-[var(--bg-surface-hover)] transition-colors border-b border-[var(--border-subtle)]";
-    if (type === "activity") return `${baseStyle} bg-[var(--bg-inset)]/30 font-medium`;
-    if (type === "subtask") return `${baseStyle}`;
-    return baseStyle;
+  // ─── Helpers ──────────────────────────────────────────────────────────
+  const getIndent = (level: number) => level * 18;
+
+  const formatDate = (val?: string) => {
+    if (!val) return "—";
+    return new Date(val).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" });
   };
 
-  const getIndentation = (level: number) => level * 24;
+  const formatDuration = (val?: number, type?: string) => {
+    if (!val) return "—";
+    if (type === "subtask") return `${val} j`;
+    return `${val} mois`;
+  };
 
-  const renderEditableCell = (task: TaskRow, field: string, value: any) => {
+  const formatWeekLabel = (date: Date) => {
+    const day = date.getDate();
+    const month = date.toLocaleDateString("fr-FR", { month: "short" });
+    const year = date.getFullYear().toString().slice(-2);
+    return `${day} ${month} '${year}`;
+  };
+
+  // ─── Editable cell ───────────────────────────────────────────────────
+  const renderCell = (task: TaskRow, field: string, value: any) => {
     const isEditing = editingCell?.rowId === task.id && editingCell?.field === field;
+    const canEdit = task.type === "activity" || task.type === "subtask";
 
     if (isEditing) {
-      if (field === "dateDebut" || field === "dateFin") {
-        return (
-          <input
-            type="date"
-            value={value || ""}
-            onChange={(e) => handleCellEdit(task.id, field, e.target.value)}
-            onBlur={() => setEditingCell(null)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setEditingCell(null);
-              if (e.key === "Escape") setEditingCell(null);
-            }}
-            autoFocus
-            className="w-full px-1 py-0.5 bg-white dark:bg-gray-800 border border-[var(--accent)] rounded text-[11px] focus:outline-none"
-          />
-        );
-      } else if (field === "duree" || field === "budget") {
-        return (
-          <input
-            type="number"
-            value={value || ""}
-            onChange={(e) => handleCellEdit(task.id, field, parseFloat(e.target.value) || 0)}
-            onBlur={() => setEditingCell(null)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setEditingCell(null);
-              if (e.key === "Escape") setEditingCell(null);
-            }}
-            autoFocus
-            className="w-full px-1 py-0.5 bg-white dark:bg-gray-800 border border-[var(--accent)] rounded text-[11px] text-right focus:outline-none"
-          />
-        );
-      } else {
-        return (
-          <input
-            type="text"
-            value={value || ""}
-            onChange={(e) => handleCellEdit(task.id, field, e.target.value)}
-            onBlur={() => setEditingCell(null)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setEditingCell(null);
-              if (e.key === "Escape") setEditingCell(null);
-            }}
-            autoFocus
-            className="w-full px-1 py-0.5 bg-white dark:bg-gray-800 border border-[var(--accent)] rounded text-[11px] focus:outline-none"
-          />
-        );
-      }
+      const inputType = field === "dateDebut" || field === "dateFin" ? "date"
+        : field === "duree" || field === "budget" ? "number"
+          : "text";
+
+      return (
+        <input
+          type={inputType}
+          value={value || ""}
+          onChange={(e) => {
+            const v = inputType === "number" ? (parseFloat(e.target.value) || 0) : e.target.value;
+            handleCellEdit(task.id, field, v);
+          }}
+          onBlur={() => setEditingCell(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") setEditingCell(null);
+          }}
+          autoFocus
+          className="msp-cell-input"
+          style={{
+            width: "100%",
+            height: ROW_HEIGHT - 4,
+            padding: "0 4px",
+            border: `2px solid ${MSP_TODAY_COLOR}`,
+            borderRadius: 0,
+            outline: "none",
+            fontSize: 11,
+            fontFamily: "inherit",
+            textAlign: inputType === "number" ? "right" : "left",
+          }}
+        />
+      );
     }
+
+    let display = "—";
+    if (field === "dateDebut" || field === "dateFin") display = formatDate(value);
+    else if (field === "duree") display = formatDuration(value, task.type);
+    else if (field === "budget") display = value ? new Intl.NumberFormat("fr-FR", { notation: "compact" }).format(value) : "—";
+    else if (field === "responsable") display = value || "—";
 
     return (
       <div
-        onClick={() => task.type === "activity" || task.type === "subtask" ? setEditingCell({ rowId: task.id, field }) : null}
-        className={`px-1 py-0.5 truncate ${task.type === "activity" || task.type === "subtask" ? "cursor-text hover:bg-[var(--bg-inset)] rounded" : ""}`}
+        onClick={() => canEdit && setEditingCell({ rowId: task.id, field })}
+        style={{
+          cursor: canEdit ? "text" : "default",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          padding: "0 4px",
+          lineHeight: `${ROW_HEIGHT}px`,
+        }}
       >
-        {field === "dateDebut" || field === "dateFin"
-          ? value
-            ? new Date(value).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit" })
-            : "—"
-          : field === "duree"
-          ? value
-            ? `${value} ${value > 1 ? "mois" : "mois"}`
-            : "—"
-          : field === "budget"
-          ? value
-            ? new Intl.NumberFormat("fr-FR", { notation: "compact", compactDisplay: "short" }).format(value)
-            : "—"
-          : value || "—"}
+        {display}
       </div>
     );
   };
 
+  // ─── Render ───────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
+    <div className="msp-root" style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+      {/* MS Project Scoped Styles */}
+      <style>{`
+        .msp-root {
+          --msp-bg: var(--bg-surface);
+          --msp-bg-header: var(--bg-inset);
+          --msp-bg-row-even: var(--bg-surface);
+          --msp-bg-row-odd: var(--bg-inset);
+          --msp-border: var(--border-default);
+          --msp-border-header: var(--border-strong);
+          --msp-text: var(--text-primary);
+          --msp-text-header: var(--text-tertiary);
+          --msp-text-muted: var(--text-secondary);
+          --msp-hover: var(--bg-surface-hover);
+          --msp-weekend: var(--border-subtle);
+          --msp-selected-bg: var(--accent-subtle);
+        }
+
+        .msp-cell-input {
+          background: var(--bg-surface);
+          color: var(--text-primary);
+        }
+
+        .msp-row:hover {
+          background: var(--msp-hover) !important;
+        }
+
+        .msp-gantt-row:hover {
+          background: var(--msp-hover) !important;
+        }
+
+        /* Custom scrollbar - thin, MS Project-like */
+        .msp-scroll::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .msp-scroll::-webkit-scrollbar-track {
+          background: var(--msp-bg);
+        }
+        .msp-scroll::-webkit-scrollbar-thumb {
+          background: var(--msp-border-header);
+          border-radius: 5px;
+        }
+        .msp-scroll::-webkit-scrollbar-thumb:hover {
+          background: var(--msp-text-muted);
+        }
+
+        /* Hide scrollbar on header sync container */
+        .msp-header-sync::-webkit-scrollbar {
+          display: none;
+        }
+        .msp-header-sync {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        /* Summary bar bracket ends */
+        .msp-summary-bar::before,
+        .msp-summary-bar::after {
+          content: '';
+          position: absolute;
+          bottom: -4px;
+          width: 0;
+          height: 0;
+        }
+        .msp-summary-bar::before {
+          left: 0;
+          border-left: 5px solid ${MSP_SUMMARY_COLOR};
+          border-right: 5px solid transparent;
+          border-top: 4px solid ${MSP_SUMMARY_COLOR};
+          border-bottom: 4px solid transparent;
+        }
+        .msp-summary-bar::after {
+          right: 0;
+          border-right: 5px solid ${MSP_SUMMARY_COLOR};
+          border-left: 5px solid transparent;
+          border-top: 4px solid ${MSP_SUMMARY_COLOR};
+          border-bottom: 4px solid transparent;
+        }
+      `}</style>
+
+      {/* ─── Toolbar (save changes) ──────────────────────────────── */}
       {hasChanges && (
-        <div className="flex items-center justify-between px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
-          <div className="flex items-center gap-2 text-[12px] text-amber-600 dark:text-amber-400">
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "6px 12px",
+          background: "rgba(237, 125, 49, 0.1)",
+          borderBottom: "1px solid rgba(237, 125, 49, 0.3)",
+          fontSize: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#ED7D31" }}>
             <Calendar size={14} />
-            <span className="font-semibold">Modifications non sauvegardées</span>
-            <span className="text-[10px] opacity-70">• Cliquez sur une cellule pour éditer • Entrée pour valider • Échap pour annuler</span>
+            <span style={{ fontWeight: 600 }}>Modifications non sauvegardées</span>
+            <span style={{ fontSize: 10, opacity: 0.7 }}>• Cliquez pour éditer • Entrée pour valider</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={() => {
                 if (confirm("Annuler toutes les modifications ?")) {
@@ -469,189 +785,618 @@ export function MSProjectView({ project, plannings, onActivityClick, onRefresh }
                   setDeletedTaskIds(new Set());
                 }
               }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-gray-500 text-white text-[11px] font-semibold rounded-[var(--radius-md)] hover:bg-gray-600 transition-colors"
+              style={{
+                display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                background: "#666", color: "#fff", border: "none", borderRadius: 2,
+                fontSize: 11, fontWeight: 600, cursor: "pointer",
+              }}
             >
-              <X size={14} />
-              Annuler
+              <X size={12} /> Annuler
             </button>
             <button
               onClick={handleSaveChanges}
-              className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white text-[11px] font-semibold rounded-[var(--radius-md)] hover:bg-green-700 transition-colors"
+              style={{
+                display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                background: MSP_TODAY_COLOR, color: "#fff", border: "none", borderRadius: 2,
+                fontSize: 11, fontWeight: 600, cursor: "pointer",
+              }}
             >
-              <Save size={14} />
-              Sauvegarder
+              <Save size={12} /> Sauvegarder
             </button>
           </div>
         </div>
       )}
 
-      {/* Main View */}
-      <div className="flex flex-1 border border-[var(--border-default)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-surface)]">
-        {/* LEFT PANEL - Table */}
-        <div className="w-[650px] flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
-          {/* Header */}
-          <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-[var(--bg-inset)] border-b border-[var(--border-default)] text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider sticky top-0 z-10">
-            <div className="col-span-4">Nom de la tâche</div>
-            <div className="col-span-1 text-center">Durée</div>
-            <div className="col-span-2 text-center">Début</div>
-            <div className="col-span-2 text-center">Fin</div>
-            <div className="col-span-2 text-center">Responsable</div>
-            <div className="col-span-1 text-center">Actions</div>
-          </div>
-
-          {/* Rows */}
-          <div className="flex-1 overflow-y-auto">
-            {tasks.map((task) => (
-              <div
-                key={task.id}
-                className={`grid grid-cols-12 gap-2 px-3 py-2 text-[12px] ${getRowStyle(task.level, task.type)}`}
-              >
-                {/* Nom */}
-                <div className="col-span-4 flex items-center gap-1" style={{ paddingLeft: getIndentation(task.level) }}>
-                  {task.hasChildren && (
-                    <button
-                      onClick={() => toggleExpand(task.id)}
-                      className="p-0.5 hover:bg-[var(--bg-inset)] rounded transition-colors flex-shrink-0"
-                    >
-                      {task.isExpanded ? (
-                        <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                      ) : (
-                        <ChevronRight size={14} className="text-[var(--text-secondary)]" />
-                      )}
-                    </button>
-                  )}
-                  {!task.hasChildren && <div className="w-[18px] flex-shrink-0" />}
-
-                  {task.activityType && (
-                    <div
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: ACTIVITY_COLORS[task.activityType as keyof typeof ACTIVITY_COLORS] }}
-                    />
-                  )}
-
-                  <span
-                    className={`truncate ${
-                      task.type === "activity"
-                        ? "font-semibold text-[var(--text-primary)]"
-                        : "text-[var(--text-secondary)]"
-                    }`}
-                    onClick={() => task.activityPath && onActivityClick(task.activityPath)}
-                    style={{ cursor: task.activityPath ? "pointer" : "default" }}
-                  >
-                    {task.name}
-                  </span>
-                </div>
-
-                {/* Durée */}
-                <div className="col-span-1 text-center text-[var(--text-secondary)]">
-                  {renderEditableCell(task, "duree", task.duree)}
-                </div>
-
-                {/* Début */}
-                <div className="col-span-2 text-center text-[var(--text-secondary)]">
-                  {renderEditableCell(task, "dateDebut", task.dateDebut)}
-                </div>
-
-                {/* Fin */}
-                <div className="col-span-2 text-center text-[var(--text-secondary)]">
-                  {renderEditableCell(task, "dateFin", task.dateFin)}
-                </div>
-
-                {/* Responsable */}
-                <div className="col-span-2 text-center text-[var(--text-secondary)]">
-                  {renderEditableCell(task, "responsable", task.responsable)}
-                </div>
-
-                {/* Actions */}
-                <div className="col-span-1 flex items-center justify-center gap-1">
-                  {task.canAddSubtask && (
-                    <button
-                      onClick={() => handleAddSubtask(task.id)}
-                      className="p-1 hover:bg-green-500/10 text-green-600 rounded transition-colors"
-                      title="Ajouter une sous-tâche"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  )}
-                  {task.type === "subtask" && (
-                    <button
-                      onClick={() => handleDeleteTask(task.id)}
-                      className="p-1 hover:bg-red-500/10 text-red-500 rounded transition-colors"
-                      title="Supprimer"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* RIGHT PANEL - Gantt Chart */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Timeline Header */}
-          <div className="flex border-b border-[var(--border-default)] bg-[var(--bg-inset)] sticky top-0 z-10">
-            {monthsToShow.map((month, index) => (
-              <div
-                key={index}
-                className="flex-1 min-w-[80px] px-2 py-2 border-r border-[var(--border-subtle)] text-center"
-              >
-                <div className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase">
-                  {month.toLocaleDateString("fr-FR", { month: "short" })}
-                </div>
-                <div className="text-[11px] font-semibold text-[var(--text-primary)]">
-                  {month.getFullYear()}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Gantt Bars */}
-          <div className="flex-1 overflow-y-auto relative">
-            {/* Grid lines */}
-            <div className="absolute inset-0 flex pointer-events-none">
-              {monthsToShow.map((_, index) => (
-                <div key={index} className="flex-1 min-w-[80px] border-r border-[var(--border-subtle)]" />
-              ))}
+      {/* ─── Main Container ──────────────────────────────────────── */}
+      <div
+        ref={containerRef}
+        style={{
+          display: "flex",
+          flex: 1,
+          overflow: "hidden",
+          background: "var(--msp-bg)",
+          border: "1px solid var(--msp-border-header)",
+          color: "var(--msp-text)",
+          fontSize: 11,
+        }}
+      >
+        {/* ════════════ LEFT PANEL — Table ════════════ */}
+        <div
+          style={{
+            width: `${leftWidth}%`,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            flexShrink: 0,
+            borderRight: "2px solid var(--msp-border-header)",
+          }}
+        >
+          {/* Table Header */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: TABLE_COLUMNS,
+            minWidth: 520,
+            background: "var(--msp-bg-header)",
+            borderBottom: "2px solid var(--msp-border-header)",
+            flexShrink: 0,
+          }}>
+            {/* Info */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              padding: "0 2px", height: HEADER_HEIGHT,
+              color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+            }}>
+              <span style={{ fontSize: 14, opacity: 0.5 }}>ℹ</span>
             </div>
+            {/* Task Mode */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              padding: "0 2px", height: HEADER_HEIGHT,
+              color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+            }}>
+              <span style={{ fontSize: 12, opacity: 0.5 }}>📌</span>
+            </div>
+            {/* Task Name */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 4,
+              borderRight: "1px solid var(--msp-border)",
+              padding: "0 8px", height: HEADER_HEIGHT,
+              color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+              textTransform: "uppercase", letterSpacing: "0.5px",
+            }}>
+              <span>Nom de la tâche</span>
+              <button
+                onClick={() => {
+                  if (expandedIds.size === 0) {
+                    const allIds = new Set<string>();
+                    project.components.forEach((comp) => {
+                      allIds.add(`comp-${comp.id}`);
+                      comp.sousComposants.forEach((sc) => {
+                        allIds.add(`sc-${comp.id}.${sc.id}`);
+                        sc.activities.forEach((_, actIdx) => {
+                          allIds.add(`${comp.id}.${sc.id}.A${actIdx + 1}`);
+                        });
+                      });
+                    });
+                    setExpandedIds(allIds);
+                  } else {
+                    setExpandedIds(new Set());
+                  }
+                }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer", padding: 2,
+                  color: "var(--msp-text-muted)", display: "flex", alignItems: "center",
+                }}
+                title={expandedIds.size === 0 ? "Tout développer" : "Tout replier"}
+              >
+                {expandedIds.size === 0 ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              </button>
+            </div>
+            {/* Duration */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              height: HEADER_HEIGHT, color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+              textTransform: "uppercase",
+            }}>
+              Durée
+            </div>
+            {/* Start */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              height: HEADER_HEIGHT, color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+              textTransform: "uppercase",
+            }}>
+              Début
+            </div>
+            {/* Finish */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              height: HEADER_HEIGHT, color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+              textTransform: "uppercase",
+            }}>
+              Fin
+            </div>
+            {/* Resource */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              borderRight: "1px solid var(--msp-border)",
+              height: HEADER_HEIGHT, color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+              textTransform: "uppercase",
+            }}>
+              Resp.
+            </div>
+            {/* Actions */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: HEADER_HEIGHT, color: "var(--msp-text-header)", fontWeight: 700, fontSize: 10,
+            }}>
+              ⚡
+            </div>
+          </div>
 
-            {/* Task bars */}
-            <div className="relative">
-              {tasks.map((task) => {
-                const barPosition = calculateBarPosition(task.dateDebut, task.dateFin);
+          {/* Table Body */}
+          <div
+            ref={leftBodyRef}
+            className="msp-scroll"
+            onScroll={handleLeftScroll}
+            style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}
+          >
+            <div style={{ minWidth: 520 }}>
+              {tasks.map((task, index) => {
+                const isComponent = task.type === "component";
+                const isSubcomponent = task.type === "subcomponent";
+                const isSummary = isComponent || isSubcomponent;
+                const rowBg = index % 2 === 0 ? "var(--msp-bg-row-even)" : "var(--msp-bg-row-odd)";
 
                 return (
                   <div
                     key={task.id}
-                    className="h-[41px] border-b border-[var(--border-subtle)] relative"
-                    style={{ minHeight: "41px" }}
+                    className="msp-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: TABLE_COLUMNS,
+                      height: ROW_HEIGHT,
+                      background: rowBg,
+                      borderBottom: "1px solid var(--msp-border)",
+                      cursor: "default",
+                      fontWeight: isSummary ? 700 : 400,
+                    }}
                   >
-                    {barPosition && (
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 h-6 rounded-[var(--radius-sm)] shadow-sm flex items-center px-2 text-white text-[10px] font-semibold cursor-pointer hover:opacity-90 transition-opacity"
-                        style={{
-                          left: barPosition.left,
-                          width: barPosition.width,
-                          backgroundColor:
-                            task.activityType
-                              ? ACTIVITY_COLORS[task.activityType as keyof typeof ACTIVITY_COLORS]
-                              : task.level === 0
-                              ? "#3b82f6"
-                              : task.level === 1
-                              ? "#6366f1"
-                              : task.level === 2
-                              ? "#8b5cf6"
-                              : "#a855f7",
-                        }}
+                    {/* Info (É/P/E) */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 1,
+                      borderRight: "1px solid var(--msp-border)",
+                      color: "var(--msp-text-muted)", fontSize: 10,
+                    }}>
+                      {(task.type === "activity" || task.type === "subtask") && task.planning && (
+                        <>
+                          <span style={{
+                            width: 8, height: 8, borderRadius: 1, fontSize: 6, fontWeight: 800,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            background: task.planning.hasEtudePrealable ? "#7030A020" : "transparent",
+                            color: task.planning.hasEtudePrealable ? "#7030A0" : "transparent",
+                            border: task.planning.hasEtudePrealable ? `1px solid #7030A0` : "none",
+                          }} title="Étude Préalable">É</span>
+                          <span style={{
+                            width: 8, height: 8, borderRadius: 1, fontSize: 6, fontWeight: 800,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            background: task.planning.hasPassation ? "#ED7D3120" : "transparent",
+                            color: task.planning.hasPassation ? "#ED7D31" : "transparent",
+                            border: task.planning.hasPassation ? `1px solid #ED7D31` : "none",
+                          }} title="Passation">P</span>
+                          <span style={{
+                            width: 8, height: 8, borderRadius: 1, fontSize: 6, fontWeight: 800,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            background: task.planning.hasExecution ? "#70AD4720" : "transparent",
+                            color: task.planning.hasExecution ? "#70AD47" : "transparent",
+                            border: task.planning.hasExecution ? `1px solid #70AD47` : "none",
+                          }} title="Exécution">E</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Task Mode (Pin/Auto) */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--msp-border)",
+                      color: "var(--msp-text-muted)", fontSize: 10,
+                    }}>
+                      {isSummary ? (
+                        <span title="Planifié automatiquement" style={{ opacity: 0.6 }}>⚙️</span>
+                      ) : (
+                        <span title="Planifié manuellement" style={{ opacity: 0.6 }}>📌</span>
+                      )}
+                    </div>
+
+                    {/* Task Name */}
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 3,
+                      borderRight: "1px solid var(--msp-border)",
+                      paddingLeft: getIndent(task.level) + 6,
+                      paddingRight: 4,
+                      overflow: "hidden",
+                    }}>
+                      {/* Expand/collapse chevron */}
+                      {task.hasChildren ? (
+                        <button
+                          onClick={() => toggleExpand(task.id)}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer", padding: 1,
+                            color: "var(--msp-text)", display: "flex", alignItems: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {task.isExpanded
+                            ? <ChevronDown size={13} />
+                            : <ChevronRight size={13} />}
+                        </button>
+                      ) : (
+                        <span style={{ width: 15, flexShrink: 0 }} />
+                      )}
+
+                      {/* Type indicator */}
+                      {isComponent && (
+                        <span style={{
+                          width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                          background: "linear-gradient(135deg, #7030A0, #9B59B6)",
+                          display: "inline-block",
+                        }} />
+                      )}
+                      {isSubcomponent && (
+                        <span style={{
+                          width: 8, height: 8, borderRadius: 2, flexShrink: 0,
+                          background: "linear-gradient(135deg, #70AD47, #A9D18E)",
+                          display: "inline-block",
+                        }} />
+                      )}
+                      {task.activityType && (
+                        <span style={{
+                          width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                          background: ACTIVITY_COLORS[task.activityType] || MSP_BAR_BLUE,
+                          display: "inline-block",
+                        }} />
+                      )}
+                      {task.type === "subtask" && (
+                        <span style={{
+                          width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+                          background: "var(--msp-text-muted)",
+                          display: "inline-block",
+                        }} />
+                      )}
+
+                      {/* Task name text */}
+                      <span
                         onClick={() => task.activityPath && onActivityClick(task.activityPath)}
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          cursor: task.activityPath ? "pointer" : "default",
+                          color: isSummary ? "var(--msp-text)" : "var(--msp-text)",
+                          fontSize: isComponent ? 12 : 11,
+                        }}
                       >
-                        <span className="truncate">{task.name}</span>
-                      </div>
-                    )}
+                        {task.name}
+                      </span>
+                    </div>
+
+                    {/* Duration */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--msp-border)",
+                      color: isSummary ? "var(--msp-text)" : "var(--msp-text-muted)",
+                    }}>
+                      {renderCell(task, "duree", task.duree)}
+                    </div>
+
+                    {/* Start */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--msp-border)",
+                      color: "var(--msp-text-muted)",
+                    }}>
+                      {renderCell(task, "dateDebut", task.dateDebut)}
+                    </div>
+
+                    {/* Finish */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--msp-border)",
+                      color: "var(--msp-text-muted)",
+                    }}>
+                      {renderCell(task, "dateFin", task.dateFin)}
+                    </div>
+
+                    {/* Resource */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRight: "1px solid var(--msp-border)",
+                      color: "var(--msp-text-muted)",
+                    }}>
+                      {renderCell(task, "responsable", task.responsable)}
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+                    }}>
+                      {task.canAddSubtask && (
+                        <button
+                          onClick={() => handleAddSubtask(task.id)}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: MSP_TODAY_COLOR, padding: 2, display: "flex",
+                            alignItems: "center", borderRadius: 2,
+                          }}
+                          title="Ajouter une sous-tâche"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      )}
+                      {task.type === "subtask" && (
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "#e74c3c", padding: 2, display: "flex",
+                            alignItems: "center", borderRadius: 2,
+                          }}
+                          title="Supprimer"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* ════════════ DIVIDER ════════════ */}
+        <div
+          onMouseDown={handleMouseDown}
+          style={{
+            width: 4,
+            background: "var(--msp-border-header)",
+            cursor: "col-resize",
+            flexShrink: 0,
+            position: "relative",
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = MSP_BAR_BLUE)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--msp-border-header)")}
+        />
+
+        {/* ════════════ RIGHT PANEL — Gantt ════════════ */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+          {/* Gantt Header — Two levels: week dates + day letters */}
+          <div
+            ref={rightHeaderRef}
+            className="msp-header-sync"
+            style={{
+              overflow: "hidden",
+              flexShrink: 0,
+              background: "var(--msp-bg-header)",
+              borderBottom: "2px solid var(--msp-border-header)",
+            }}
+          >
+            {/* Top level: Week labels */}
+            <div style={{ display: "flex", width: totalGanttWidth, height: 22 }}>
+              {weeks.map((week, wIdx) => (
+                <div
+                  key={wIdx}
+                  style={{
+                    width: week.days.length * DAY_WIDTH,
+                    flexShrink: 0,
+                    borderRight: "1px solid var(--msp-border-header)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "var(--msp-text-header)",
+                    letterSpacing: "0.3px",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {week.days.length >= 4 ? formatWeekLabel(week.weekStart) : ""}
+                </div>
+              ))}
+            </div>
+
+            {/* Bottom level: Day letters */}
+            <div style={{ display: "flex", width: totalGanttWidth, height: 22 }}>
+              {allDays.map((day, dIdx) => {
+                const dow = day.getDay();
+                const isWeekend = dow === 0 || dow === 6;
+                return (
+                  <div
+                    key={dIdx}
+                    style={{
+                      width: DAY_WIDTH,
+                      flexShrink: 0,
+                      borderRight: dow === 0 ? "1px solid var(--msp-border-header)" : "1px solid var(--msp-border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      fontWeight: 500,
+                      color: isWeekend ? "var(--msp-text-muted)" : "var(--msp-text-header)",
+                      background: isWeekend ? "var(--msp-weekend)" : "transparent",
+                    }}
+                  >
+                    {FRENCH_DAY_LETTERS[dow]}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Gantt Body */}
+          <div
+            ref={rightBodyRef}
+            className="msp-scroll"
+            onScroll={handleRightScroll}
+            style={{ flex: 1, overflow: "auto", position: "relative" }}
+          >
+            <div style={{ width: totalGanttWidth, position: "relative" }}>
+
+              {/* Day grid lines (via repeating background) */}
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                backgroundImage: `repeating-linear-gradient(to right, transparent 0px, transparent ${DAY_WIDTH - 1}px, var(--msp-border) ${DAY_WIDTH - 1}px, var(--msp-border) ${DAY_WIDTH}px)`,
+              }} />
+
+              {/* Weekend shading */}
+              <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                {allDays.map((day, dIdx) => {
+                  const dow = day.getDay();
+                  if (dow !== 0 && dow !== 6) return null;
+                  return (
+                    <div
+                      key={dIdx}
+                      style={{
+                        position: "absolute",
+                        left: dIdx * DAY_WIDTH,
+                        top: 0,
+                        width: DAY_WIDTH,
+                        height: "100%",
+                        background: "var(--msp-weekend)",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Today marker */}
+              {todayIndex >= 0 && (
+                <div style={{
+                  position: "absolute",
+                  left: todayIndex * DAY_WIDTH + DAY_WIDTH / 2,
+                  top: 0,
+                  width: 2,
+                  height: "100%",
+                  background: MSP_TODAY_COLOR,
+                  zIndex: 10,
+                  pointerEvents: "none",
+                }} />
+              )}
+
+              {/* Week separator lines (stronger) */}
+              <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                {weeks.map((week, wIdx) => {
+                  if (wIdx === 0) return null;
+                  const daysBefore = weeks.slice(0, wIdx).reduce((sum, w) => sum + w.days.length, 0);
+                  return (
+                    <div
+                      key={wIdx}
+                      style={{
+                        position: "absolute",
+                        left: daysBefore * DAY_WIDTH,
+                        top: 0,
+                        width: 1,
+                        height: "100%",
+                        background: "var(--msp-border-header)",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Task Bars */}
+              <div style={{ position: "relative" }}>
+                {tasks.map((task, index) => {
+                  const bar = calculateBarPosition(task.dateDebut, task.dateFin);
+                  const isComponent = task.type === "component";
+                  const isSubcomponent = task.type === "subcomponent";
+                  const isSummary = isComponent || isSubcomponent;
+                  const rowBg = index % 2 === 0 ? "var(--msp-bg-row-even)" : "var(--msp-bg-row-odd)";
+
+                  // Bar colors
+                  let barColor = MSP_BAR_BLUE;
+                  if (task.activityType && ACTIVITY_COLORS[task.activityType]) {
+                    barColor = ACTIVITY_COLORS[task.activityType];
+                  }
+
+                  return (
+                    <div
+                      key={task.id}
+                      className="msp-gantt-row"
+                      style={{
+                        height: ROW_HEIGHT,
+                        position: "relative",
+                        display: "flex",
+                        alignItems: "center",
+                        borderBottom: "1px solid var(--msp-border)",
+                        background: rowBg,
+                      }}
+                    >
+                      {bar && isSummary && (
+                        /* Summary bar — thin with bracket ends */
+                        <div
+                          className="msp-summary-bar"
+                          style={{
+                            position: "absolute",
+                            left: bar.left,
+                            width: bar.width,
+                            height: 7,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            background: MSP_SUMMARY_COLOR,
+                            zIndex: 5,
+                          }}
+                        />
+                      )}
+
+                      {bar && !isSummary && (
+                        /* Regular task bar */
+                        <div
+                          onClick={() => task.activityPath && onActivityClick(task.activityPath)}
+                          style={{
+                            position: "absolute",
+                            left: bar.left,
+                            width: bar.width,
+                            height: task.type === "subtask" ? 12 : 16,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            background: barColor,
+                            borderRadius: 2,
+                            cursor: task.activityPath ? "pointer" : "default",
+                            zIndex: 5,
+                            display: "flex",
+                            alignItems: "center",
+                            paddingLeft: 4,
+                            overflow: "hidden",
+                          }}
+                        >
+                          <span style={{
+                            color: "#ffffff",
+                            fontSize: 9,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                          }}>
+                            {bar.width > 80 ? task.name : ""}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

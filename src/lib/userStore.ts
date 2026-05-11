@@ -5,6 +5,7 @@
 
 import { userService, type User, type CreateUserDto, type UpdateUserDto } from "@/services/api/userService";
 import { teamService, type TeamAssignment } from "@/services/api/teamService";
+import type { ProjectRole } from "@/lib/rbacStore";
 
 // ── Users CRUD ──
 
@@ -55,16 +56,17 @@ export async function getActiveProjectTeam(projectId: string): Promise<TeamAssig
 
 /**
  * Get user's project role
+ * Hiérarchie : view < contributeur < chef_projet < coordinateur < coordinateur_general
  */
 export async function getUserProjectRole(
   userId: string,
   projectId: string
-): Promise<'chef_projet' | 'contributeur' | 'view' | null> {
+): Promise<ProjectRole | null> {
   const assignments = await teamService.getUserProjects(userId);
   const assignment = assignments.find(
     (a) => a.projectId === projectId && a.activeInProject
   );
-  return assignment?.projectRole ?? null;
+  return (assignment?.projectRole as ProjectRole) ?? null;
 }
 
 /**
@@ -78,20 +80,12 @@ export async function getUserProjects(userId: string): Promise<TeamAssignment[]>
 export async function addTeamAssignment(assignment: {
   projectId: string;
   userId: string;
-  functionalRole: string;
-  projectRole?: 'chef_projet' | 'contributeur' | 'view';
+  functionalRole?: string;
+  projectRole?: ProjectRole;
   level?: 'project' | 'component' | 'subcomponent' | 'activity';
   entityId?: string;
   entityName?: string;
   assignedBy?: string;
-  permissions?: string[];
-  newUserData?: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    position: string;
-  };
 }): Promise<TeamAssignment> {
   return await teamService.assign(assignment);
 }
@@ -112,33 +106,6 @@ export async function updateTeamAssignment(
   throw new Error("Reactivation not implemented");
 }
 
-// Functional roles (kept for UI dropdowns)
-export const FUNCTIONAL_ROLES_PROJET = [
-  "Project Manager",
-  "Project Director",
-  "Financial Manager",
-  "Procurement Manager",
-  "Monitoring & Evaluation Manager",
-];
-
-export const FUNCTIONAL_ROLES_COMPOSANT = [
-  "Component Manager",
-  "Lead Engineer",
-  "Technical Controller",
-];
-
-export const FUNCTIONAL_ROLES_SOUS_COMPOSANT = [
-  "Sub-Component Manager",
-  "Engineer",
-  "Technician",
-];
-
-export const FUNCTIONAL_ROLES_ACTIVITE = [
-  "Activity Manager",
-  "Team Leader",
-  "Technician",
-  "Specialized Worker",
-];
-
 // Re-export types
 export type { User, CreateUserDto, UpdateUserDto, TeamAssignment };
+

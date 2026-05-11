@@ -1,6 +1,7 @@
 // ══════════════════════════════════════
 // RBAC STORE — Role-Based Access Control
 // Moteur de permissions pour EDC Track
+// Hiérarchie : View < Contributeur < Chef Projet < Coordinateur < Coordinateur Général
 // ══════════════════════════════════════
 
 // ── Types de permissions ──
@@ -11,47 +12,84 @@ export type Permission =
   | "team:view" | "team:add" | "team:remove" | "team:edit"
   | "structure:view" | "structure:edit"
   | "project:create" | "project:delete"
+  | "planning:view" | "planning:edit"
   | "users:manage";
 
 // ── Rôle plateforme ──
 export type PlatformRole = "admin" | "user";
 
 // ── Rôle projet ──
-export type ProjectRole = "chef_projet" | "contributeur" | "view";
+export type ProjectRole = "coordinateur_general" | "coordinateur" | "chef_projet" | "contributeur" | "view";
 
 // Labels d'affichage
 export const PROJECT_ROLE_LABELS: Record<ProjectRole, string> = {
+  coordinateur_general: "Coordinateur Général",
+  coordinateur: "Coordinateur",
   chef_projet: "Chef de Projet",
   contributeur: "Contributeur",
-  view: "View (Lecture seule)",
+  view: "Lecture seule",
+};
+
+// Descriptions des rôles (pour tooltips)
+export const PROJECT_ROLE_DESCRIPTIONS: Record<ProjectRole, string> = {
+  coordinateur_general: "Supervise tous les projets. Accès complet à l'ensemble de la plateforme, juste en dessous de l'administrateur.",
+  coordinateur: "Supervise un ou plusieurs projets. Mêmes droits que le chef de projet sur les projets qu'il coordonne.",
+  chef_projet: "Accès complet au projet : modifier, gérer l'équipe, valider/rejeter, planifier.",
+  contributeur: "Peut charger, télécharger et modifier ses propres uploads. Ne peut pas gérer l'équipe ni modifier le projet.",
+  view: "Lecture seule : peut uniquement consulter et prévisualiser les documents. Aucun téléchargement ni modification.",
 };
 
 export const PROJECT_ROLE_COLORS: Record<ProjectRole, { bg: string; text: string; border: string }> = {
+  coordinateur_general: { bg: "bg-purple-500/10", text: "text-purple-600", border: "border-purple-500/20" },
+  coordinateur: { bg: "bg-indigo-500/10", text: "text-indigo-600", border: "border-indigo-500/20" },
   chef_projet: { bg: "bg-blue-500/10", text: "text-blue-600", border: "border-blue-500/20" },
   contributeur: { bg: "bg-amber-500/10", text: "text-amber-600", border: "border-amber-500/20" },
   view: { bg: "bg-gray-500/10", text: "text-gray-600", border: "border-gray-500/20" },
 };
 
-export const ALL_PROJECT_ROLES: ProjectRole[] = ["chef_projet", "contributeur", "view"];
+export const ALL_PROJECT_ROLES: ProjectRole[] = [
+  "coordinateur_general",
+  "coordinateur",
+  "chef_projet",
+  "contributeur",
+  "view",
+];
 
 // ── Matrice de permissions par rôle projet ──
 
 const PROJECT_PERMISSIONS: Record<ProjectRole, Permission[]> = {
+  coordinateur_general: [
+    "doc:view", "doc:download", "doc:upload", "doc:edit", "doc:delete",
+    "doc:validate", "doc:reject",
+    "team:view", "team:add", "team:remove", "team:edit",
+    "structure:view", "structure:edit",
+    "planning:view", "planning:edit",
+  ],
+  coordinateur: [
+    "doc:view", "doc:download", "doc:upload", "doc:edit", "doc:delete",
+    "doc:validate", "doc:reject",
+    "team:view", "team:add", "team:remove", "team:edit",
+    "structure:view", "structure:edit",
+    "planning:view", "planning:edit",
+  ],
   chef_projet: [
     "doc:view", "doc:download", "doc:upload", "doc:edit", "doc:delete",
     "doc:validate", "doc:reject",
     "team:view", "team:add", "team:remove", "team:edit",
     "structure:view", "structure:edit",
+    "planning:view", "planning:edit",
   ],
   contributeur: [
-    "doc:view", "doc:download", "doc:upload",
+    "doc:view", "doc:download", "doc:upload", "doc:edit", // Modifier ses propres uploads (avec traçabilité)
     "team:view",
     "structure:view",
+    "planning:view",
   ],
   view: [
-    "doc:view", "doc:download",
+    "doc:view", // Lecture seule — pas de téléchargement
     "team:view",
     "structure:view",
+    "planning:view",
   ],
 };
 
@@ -63,7 +101,7 @@ const ADMIN_ONLY_PERMISSIONS: Permission[] = [
 ];
 
 const ALL_PERMISSIONS: Permission[] = [
-  ...PROJECT_PERMISSIONS.chef_projet,
+  ...PROJECT_PERMISSIONS.coordinateur_general,
   ...ADMIN_ONLY_PERMISSIONS,
 ];
 
@@ -132,7 +170,24 @@ export function requiresAuditLog(permission: Permission): boolean {
     "doc:validate", "doc:reject", "doc:unlock",
     "team:add", "team:remove", "team:edit",
     "structure:edit",
+    "planning:edit",
     "project:create", "project:delete",
   ];
   return AUDITABLE_ACTIONS.includes(permission);
 }
+
+/**
+ * Vérifie si un rôle projet est supérieur ou égal à un autre.
+ * Utile pour déterminer si un utilisateur peut assigner un rôle.
+ */
+export function isRoleHigherOrEqual(role: ProjectRole, thanRole: ProjectRole): boolean {
+  const ROLE_HIERARCHY: Record<ProjectRole, number> = {
+    view: 0,
+    contributeur: 1,
+    chef_projet: 2,
+    coordinateur: 3,
+    coordinateur_general: 4,
+  };
+  return ROLE_HIERARCHY[role] >= ROLE_HIERARCHY[thanRole];
+}
+

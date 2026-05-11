@@ -27,7 +27,12 @@ const COLUMN_MAPPINGS = {
     { field: "numero", label: "Numéro du livrable", required: true },
     { field: "intitule", label: "Intitulé", required: true },
     { field: "ponderation", label: "Pondération (%)", required: true },
-    { field: "delaiMois", label: "Délai (mois)", required: true },
+    { field: "delai", label: "Délai depuis T0 (mois)", required: false },
+    { field: "duree", label: "Durée d'exécution (mois)", required: false },
+    { field: "dateDebut", label: "Date de début", required: false },
+    { field: "dateFin", label: "Date de fin", required: false },
+    { field: "predecesseur", label: "Prédécesseur", required: false },
+    { field: "successeur", label: "Successeur", required: false },
     { field: "description", label: "Description", required: false },
   ],
   passation: [
@@ -38,6 +43,13 @@ const COLUMN_MAPPINGS = {
   execution: [
     { field: "numero", label: "Numéro", required: true },
     { field: "designation", label: "Désignation", required: true },
+    { field: "ponderation", label: "Pondération (%)", required: false },
+    { field: "delai", label: "Délai depuis T0 (mois)", required: false },
+    { field: "duree", label: "Durée d'exécution (mois)", required: false },
+    { field: "dateDebut", label: "Date de début", required: false },
+    { field: "dateFin", label: "Date de fin", required: false },
+    { field: "predecesseur", label: "Prédécesseur", required: false },
+    { field: "successeur", label: "Successeur", required: false },
     { field: "unite", label: "Unité", required: false },
     { field: "quantite", label: "Quantité", required: false },
     { field: "prixUnitaire", label: "Prix unitaire", required: false },
@@ -129,15 +141,27 @@ export function FileImportModal({ isOpen, onClose, onImport, importType }: Props
           if (mapping.columnIndex !== null) {
             const value = row[mapping.columnIndex];
             // Conversion selon le type
-            if (mapping.field === "ponderation" || mapping.field === "delaiMois" || mapping.field === "delaiJours" || mapping.field === "ordre") {
-              obj[mapping.field] = parseInt(value) || 0;
+            if (mapping.field === "ponderation" || mapping.field === "delai" || mapping.field === "duree" || mapping.field === "delaiJours" || mapping.field === "ordre") {
+              obj[mapping.field] = value ? parseInt(value) || 0 : undefined;
             } else if (mapping.field === "quantite" || mapping.field === "prixUnitaire") {
-              obj[mapping.field] = parseFloat(value) || 0;
+              obj[mapping.field] = value ? parseFloat(value) || 0 : undefined;
+            } else if (mapping.field === "dateDebut" || mapping.field === "dateFin") {
+              // Gérer les dates Excel (nombre de jours depuis 1900)
+              if (typeof value === 'number') {
+                const date = XLSX.SSF.parse_date_code(value);
+                obj[mapping.field] = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+              } else if (value) {
+                obj[mapping.field] = value;
+              }
             } else {
               obj[mapping.field] = value || "";
             }
           }
         });
+        // Ajouter le statut par défaut pour les livrables
+        if (importType === "etude" || importType === "execution") {
+          obj.statut = "en_attente";
+        }
         return obj;
       });
 
@@ -146,6 +170,9 @@ export function FileImportModal({ isOpen, onClose, onImport, importType }: Props
   };
 
   const handleConfirmImport = () => {
+    console.log("🔄 Confirmation de l'import...");
+    console.log("📊 Données à importer:", previewData);
+    
     const calibrage: Record<string, number> = {};
     mappings.forEach((m) => {
       if (m.columnIndex !== null) {
@@ -153,7 +180,12 @@ export function FileImportModal({ isOpen, onClose, onImport, importType }: Props
       }
     });
 
+    console.log("🗺️ Calibrage:", calibrage);
+    console.log("✅ Appel de onImport avec", previewData.length, "éléments");
+    
     onImport(previewData, calibrage);
+    
+    console.log("🚪 Fermeture du modal");
     handleClose();
   };
 

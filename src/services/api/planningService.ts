@@ -16,8 +16,16 @@ export interface Livrable {
   numero: string;
   intitule: string;
   ponderation: number;
-  delaiMois: number;
+  delaiMois: number; // Ancien champ, gardé pour compatibilité
+  dateDebut?: Date;
+  dateFin?: Date;
+  duree?: number;
+  dureeUnite?: 'jours' | 'semaines' | 'mois';
+  delai?: number;
+  delaiUnite?: 'jours' | 'semaines' | 'mois';
   dateEcheance?: Date;
+  predecesseur?: string;
+  successeur?: string;
   description?: string;
   statut?: 'en_attente' | 'soumis' | 'valide' | 'rejete';
 }
@@ -40,7 +48,9 @@ export interface TacheExecution {
   prixUnitaire?: number;
   dateDebut?: Date;
   dateFin?: Date;
-  dureeJours?: number;
+  duree?: number;
+  dureeUnite?: 'jours' | 'semaines' | 'mois';
+  dureeJours?: number; // Legacy
   avancement?: number;
   responsable?: string;
 }
@@ -162,22 +172,23 @@ class PlanningService {
 
   // Créer une planification
   async create(data: CreatePlanningDto): Promise<Planning> {
-    const response = await apiClient.post<Planning>(this.baseUrl, data);
-    return response.data;
+    const response = await apiClient.post(this.baseUrl, data);
+    return response.data?.data || response.data;
   }
 
   // Récupérer toutes les planifications d'un projet
   async getByProject(projectCode: string): Promise<Planning[]> {
-    const response = await apiClient.get<Planning[]>(`${this.baseUrl}/project/${projectCode}`);
-    return response.data;
+    const response = await apiClient.get(`${this.baseUrl}/project/${projectCode}`);
+    const result = response.data?.data || response.data;
+    return Array.isArray(result) ? result : [];
   }
 
   // Récupérer une planification spécifique
   async getOne(projectCode: string, activityPath: string): Promise<Planning> {
-    const response = await apiClient.get<Planning>(
+    const response = await apiClient.get(
       `${this.baseUrl}/project/${projectCode}/activity/${activityPath}`
     );
-    return response.data;
+    return response.data?.data || response.data;
   }
 
   // Mettre à jour une planification
@@ -186,11 +197,11 @@ class PlanningService {
     activityPath: string,
     data: UpdatePlanningDto
   ): Promise<Planning> {
-    const response = await apiClient.put<Planning>(
+    const response = await apiClient.put(
       `${this.baseUrl}/project/${projectCode}/activity/${activityPath}`,
       data
     );
-    return response.data;
+    return response.data?.data || response.data;
   }
 
   // Supprimer une planification
@@ -200,18 +211,18 @@ class PlanningService {
 
   // Statistiques d'un projet
   async getProjectStats(projectCode: string): Promise<PlanningStats> {
-    const response = await apiClient.get<PlanningStats>(
+    const response = await apiClient.get(
       `${this.baseUrl}/project/${projectCode}/stats`
     );
-    return response.data;
+    return response.data?.data || response.data;
   }
 
   // Vérifier les dépassements de budget
   async checkBudgetOverruns(projectCode: string): Promise<BudgetOverrun[]> {
-    const response = await apiClient.get<BudgetOverrun[]>(
+    const response = await apiClient.get(
       `${this.baseUrl}/project/${projectCode}/budget-overruns`
     );
-    return response.data;
+    return response.data?.data || response.data;
   }
 }
 

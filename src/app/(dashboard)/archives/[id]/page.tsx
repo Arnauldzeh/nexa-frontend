@@ -418,9 +418,7 @@ export default function ProjectConfigPage() {
     loadProject();
   }, [projectId]);
   
-  const [currentComp, setCurrentComp] = useState<string | null>(
-    PROJECT.components[0]?.id || null,
-  );
+  const [currentComp, setCurrentComp] = useState<string | null>(null);
   const [currentSComp, setCurrentSComp] = useState<string | null>(null);
   const [currentPhase, setCurrentPhase] = useState<
     "etude" | "passation" | "execution"
@@ -428,6 +426,7 @@ export default function ProjectConfigPage() {
   const [selectedActivity, setSelectedActivity] = useState<ActivityData | null>(
     null,
   );
+  const [showComposantes, setShowComposantes] = useState(false);
 
   // Déterminer le niveau le plus bas (où afficher les 3 phases)
   const lowestLevel = useMemo(() => {
@@ -613,6 +612,7 @@ export default function ProjectConfigPage() {
     setCurrentPhase("etude");
     setSelectedActivity(null);
     setExpandedRows([]);
+    setShowComposantes(true); // Activer l'affichage des composantes
   }, []);
   const handleSelectSComp = useCallback((id: string) => {
     setCurrentSComp(id);
@@ -1762,7 +1762,18 @@ export default function ProjectConfigPage() {
   return (
     <div className="flex flex-col h-full">
       {/* HEADER */}
-      <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] px-8 pt-5 pb-4 flex-shrink-0">
+      <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] px-8 pt-4 pb-4 flex-shrink-0">
+        {/* Breadcrumb en haut */}
+        <div className="mb-3">
+          <Link
+            href="/archives"
+            className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--text-tertiary)] hover:text-[var(--accent)] transition-colors inline-flex"
+          >
+            <ChevronLeft size={14} /> Tous les projets
+          </Link>
+        </div>
+        
+        {/* Titre et bouton */}
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-[var(--radius-lg)] bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-[var(--shadow-sm)] flex-shrink-0">
@@ -1786,9 +1797,6 @@ export default function ProjectConfigPage() {
                   {PROJECT.id}
                 </span>
               </h1>
-              <div className="text-[11px] text-[var(--text-secondary)] font-medium mt-0.5">
-                Archives • {PROJECT.description}
-              </div>
             </div>
           </div>
           <Link
@@ -1801,39 +1809,93 @@ export default function ProjectConfigPage() {
         </div>
       </div>
 
-      {/* NAV BAR — Same style as Suivi */}
-      <div className="flex items-center px-8 bg-[var(--bg-surface)] border-b border-[var(--border-default)] flex-shrink-0">
-        {currentComp ? (
+      {/* NAV BAR — Onglets réorganisés */}
+      <div className="bg-[var(--bg-surface)] border-b border-[var(--border-default)] flex-shrink-0">
+        {/* Row 1: Étude Globale + COMPOSANTES pills */}
+        <div className="flex items-center gap-2 px-8 py-2 border-b border-[var(--border-subtle)]">
           <button
-            onClick={handleGoBack}
-            className="flex items-center gap-1.5 py-3 pr-4 mr-1 text-[11px] font-bold text-[var(--text-secondary)] border-r border-[var(--border-default)] hover:text-[var(--accent)] transition-colors"
+            onClick={() => {
+              setCurrentComp(null);
+              setCurrentSComp(null);
+              setSelectedActivity(null);
+              setExpandedRows([]);
+              setShowComposantes(false);
+            }}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[12px] font-bold transition-all flex-shrink-0 ${
+              !currentComp && !showComposantes
+                ? "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.1)]"
+                : "text-[var(--text-secondary)] hover:text-emerald-600 hover:bg-emerald-500/8 border border-transparent"
+            }`}
           >
-            <ChevronLeft size={14} /> Étude globale
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            Étude Globale
           </button>
-        ) : (
-          <Link
-            href="/archives"
-            className="flex items-center gap-1.5 py-3 pr-4 mr-1 text-[11px] font-bold text-[var(--text-secondary)] border-r border-[var(--border-default)] hover:text-[var(--accent)] transition-colors"
-          >
-            <ChevronLeft size={14} /> Tous les projets
-          </Link>
-        )}
-        <div className="flex gap-0.5 ml-2 overflow-x-auto">
-          {!currentComp && (
-            <button className="py-3 px-4 text-[13px] font-bold border-b-2 border-[var(--text-primary)] text-[var(--text-primary)] whitespace-nowrap">
-              Étude globale
+
+          {PROJECT.components.length > 0 && (
+            <button
+              onClick={() => {
+                setShowComposantes(!showComposantes);
+                if (!showComposantes) {
+                  // Si on ouvre les composantes, ne pas sélectionner de composante par défaut
+                  setCurrentComp(null);
+                  setCurrentSComp(null);
+                  setSelectedActivity(null);
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[12px] font-bold transition-all flex-shrink-0 ${
+                showComposantes || currentComp
+                  ? "bg-blue-500/15 text-blue-600 border border-blue-500/30 shadow-[0_0_8px_rgba(59,130,246,0.1)]"
+                  : "text-[var(--text-secondary)] hover:text-blue-600 hover:bg-blue-500/8 border border-transparent"
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              Composantes
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-500/20 text-[10px] font-bold">
+                {PROJECT.components.length}
+              </span>
             </button>
           )}
-          {PROJECT.components.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => handleSelectComp(c.id)}
-              className={`py-3 px-4 text-[13px] font-medium border-b-2 transition-colors whitespace-nowrap ${currentComp === c.id ? "border-[var(--text-primary)] text-[var(--text-primary)] font-bold" : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
-            >
-              {c.name}
-            </button>
-          ))}
         </div>
+
+        {/* Row 2: Component tabs (conditionnelle - affichée seulement si showComposantes ou currentComp) */}
+        {PROJECT.components.length > 0 && (showComposantes || currentComp) && (
+          <div className="flex items-center px-8 py-2">
+            <div className="flex gap-0.5 overflow-x-auto scrollbar-hide">
+              {PROJECT.components.map((c, idx) => {
+                const dotColors = [
+                  "bg-emerald-500", "bg-blue-500", "bg-amber-500",
+                  "bg-purple-500", "bg-cyan-500", "bg-rose-500",
+                  "bg-teal-500", "bg-indigo-500", "bg-orange-500", "bg-pink-500",
+                ];
+                const dotColor = dotColors[idx % dotColors.length];
+                const isActive = currentComp === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => handleSelectComp(c.id)}
+                    className={`flex items-center gap-2 py-2 px-3.5 text-[12px] font-medium border-b-2 transition-all whitespace-nowrap ${
+                      isActive
+                        ? "border-[var(--accent)] text-[var(--text-primary)] font-bold"
+                        : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? dotColor : "bg-[var(--text-tertiary)] opacity-50"} transition-all`} />
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CONTENT */}

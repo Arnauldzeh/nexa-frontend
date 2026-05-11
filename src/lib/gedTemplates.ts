@@ -48,9 +48,3 @@ export const EMPTY_EXECUTION_DOCS: DocDataTemplate[] = [
     { name: "Résiliation", desc: "Aucun fichier", type: "pdf", date: "—", status: "manquant", files: [] },
     { name: "Autres", desc: "Aucun fichier", type: "pdf", date: "—", status: "manquant", files: [] },
 ];
-
-export const LOM_PANGAR_ID = "PRJ-2008-001";
-
-export function isLomPangar(projectId: string): boolean {
-    return projectId?.toLowerCase() === LOM_PANGAR_ID.toLowerCase();
-}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   getUsers,
   addUser,
@@ -8,12 +9,23 @@ import {
   deleteUser,
   type User,
 } from "@/lib/userStore";
-import { Plus, Edit2, Trash2, Search, Mail, Phone, Briefcase } from "lucide-react";
+import { Plus, Edit2, Trash2, Search, Mail, Phone, Briefcase, Upload } from "lucide-react";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
 import { getErrorMessage } from "@/services/api/client";
+
+const EDC_POSITIONS = [
+  "Directeur Général",
+  "Sous-Directeur",
+  "Chef de Département",
+  "Chef de Service",
+  "Ingénieur",
+  "Financier",
+  "Assistant",
+  "Autre"
+];
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -22,8 +34,8 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<"users" | "pending">("users");
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchUsers = async () => {
     try {
@@ -31,15 +43,6 @@ export default function UsersPage() {
       setError(null);
       const data = await getUsers();
       setUsers(data);
-      
-      // Récupérer les demandes en attente depuis le backend
-      // Pour l'instant, on va filtrer les affectations avec userId="pending"
-      // Dans une vraie implémentation, il faudrait un endpoint dédié
-      const response = await fetch('/api/team/pending-requests');
-      if (response.ok) {
-        const pendingData = await response.json();
-        setPendingRequests(pendingData.data || []);
-      }
     } catch (err: any) {
       setError(getErrorMessage(err));
     } finally {
@@ -173,58 +176,80 @@ export default function UsersPage() {
     }
   };
 
-  const handleApproveRequest = async (request: any) => {
-    try {
-      setSubmitting(true);
-      
-      // Créer l'utilisateur
-      const login = `${request.newUserData.firstName.toLowerCase()}.${request.newUserData.lastName.toLowerCase()}`;
-      const createData = {
-        firstName: request.newUserData.firstName,
-        lastName: request.newUserData.lastName,
-        email: request.newUserData.email,
-        phone: request.newUserData.phone,
-        position: request.newUserData.position,
-        department: "",
-        login: login,
-        password: "Temp@2026",
-        platformRole: "user" as const,
-        status: "active" as const,
-      };
-      
-      const newUser = await addUser(createData);
-      
-      // Mettre à jour l'affectation avec le vrai userId
-      await fetch(`/api/team/${request._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: newUser.id }),
-      });
-      
-      toast.success(`Utilisateur ${newUser.firstName} ${newUser.lastName} créé avec succès`);
-      await fetchUsers();
-    } catch (err: any) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const handleRejectRequest = async (requestId: string) => {
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     try {
-      setSubmitting(true);
-      
-      // Supprimer l'affectation en attente
-      await fetch(`/api/team/${requestId}`, {
-        method: 'DELETE',
-      });
-      
-      toast.success("Demande rejetée");
-      await fetchUsers();
+      setImporting(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+      if (jsonData.length === 0) {
+        toast.error("Le fichier Excel est vide");
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Processing sequentially to avoid overwhelming the server
+      for (const row of jsonData) {
+        // Map common French column names to our schema
+        const firstName = row["Prénom"] || row["Prenom"] || row["First Name"] || row["firstName"] || "";
+        const lastName = row["Nom"] || row["Last Name"] || row["lastName"] || "";
+        const email = row["Email"] || row["E-mail"] || row["Courriel"] || row["email"] || "";
+        const phone = row["Téléphone"] || row["Telephone"] || row["Phone"] || row["phone"] || "";
+        const position = row["Fonction"] || row["Poste"] || row["Position"] || row["position"] || "";
+        const department = row["Département"] || row["Departement"] || row["Department"] || row["department"] || "";
+
+        if (!firstName || !lastName || !email) {
+          errorCount++;
+          continue;
+        }
+
+        const login = `${firstName.toLowerCase().trim()}.${lastName.toLowerCase().trim().replace(/\s+/g, '')}`;
+
+        try {
+          await addUser({
+            firstName,
+            lastName,
+            email,
+            phone: phone.toString(),
+            position,
+            department,
+            login,
+            password: "User@2026", // Default password for imported users
+            platformRole: "user",
+            status: "active",
+          });
+          successCount++;
+        } catch (err) {
+          console.error("Error creating user:", err);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`${successCount} utilisateur(s) importé(s) avec succès`);
+        await fetchUsers();
+      }
+      if (errorCount > 0) {
+        toast.error(`${errorCount} ligne(s) ont échoué (données manquantes ou email/login existant)`);
+      }
     } catch (err: any) {
-      toast.error(getErrorMessage(err));
+      toast.error("Erreur lors de la lecture du fichier Excel");
+      console.error(err);
     } finally {
-      setSubmitting(false);
+      setImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""; // Reset input
+      }
     }
   };
 
@@ -262,38 +287,8 @@ export default function UsersPage() {
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 mb-6 border-b border-[var(--border-default)]">
-        <button
-          onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${
-            activeTab === "users"
-              ? "border-[var(--accent)] text-[var(--accent)]"
-              : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          Utilisateurs ({filteredUsers.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("pending")}
-          className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 relative ${
-            activeTab === "pending"
-              ? "border-[var(--accent)] text-[var(--accent)]"
-              : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          Demandes en attente
-          {pendingRequests.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-              {pendingRequests.length}
-            </span>
-          )}
-        </button>
-      </div>
-
       {/* Actions bar */}
-      {activeTab === "users" && (
-        <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6">
           <div className="relative flex-1 max-w-md">
             <Search
               size={16}
@@ -308,134 +303,34 @@ export default function UsersPage() {
             />
           </div>
 
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
-          >
-            <Plus size={16} />
-            Nouvel utilisateur
-          </button>
-        </div>
-      )}
-
-      {/* Pending Requests Section */}
-      {activeTab === "pending" && (
-        <div className="space-y-4 mb-6">
-          {pendingRequests.length === 0 ? (
-            <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-12 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/10 flex items-center justify-center">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-500">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
-                Aucune demande en attente
-              </h3>
-              <p className="text-sm text-[var(--text-secondary)]">
-                Toutes les demandes d'inscription ont été traitées
-              </p>
-            </div>
-          ) : (
-            pendingRequests.map((request) => (
-              <div
-                key={request._id}
-                className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-6 shadow-sm"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white text-lg font-bold">
-                        {request.newUserData.firstName[0]}{request.newUserData.lastName[0]}
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                          {request.newUserData.firstName} {request.newUserData.lastName}
-                        </h3>
-                        <p className="text-sm text-[var(--text-secondary)]">
-                          Demande d'inscription
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <div className="text-xs font-semibold text-[var(--text-secondary)] mb-1">Email</div>
-                        <div className="text-sm text-[var(--text-primary)] flex items-center gap-2">
-                          <Mail size={14} />
-                          {request.newUserData.email}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-[var(--text-secondary)] mb-1">Téléphone</div>
-                        <div className="text-sm text-[var(--text-primary)] flex items-center gap-2">
-                          <Phone size={14} />
-                          {request.newUserData.phone}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-[var(--text-secondary)] mb-1">Fonction</div>
-                        <div className="text-sm text-[var(--text-primary)] flex items-center gap-2">
-                          <Briefcase size={14} />
-                          {request.newUserData.position}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-[var(--text-secondary)] mb-1">Rôle fonctionnel</div>
-                        <div className="text-sm text-[var(--text-primary)]">
-                          {request.functionalRole}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-[var(--radius-md)]">
-                      <div className="text-xs font-semibold text-blue-600 mb-1">Identifiants proposés</div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span className="text-[var(--text-secondary)]">Login:</span>{" "}
-                          <span className="font-mono font-bold text-[var(--text-primary)]">
-                            {request.newUserData.firstName.toLowerCase()}.{request.newUserData.lastName.toLowerCase()}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[var(--text-secondary)]">Mot de passe:</span>{" "}
-                          <span className="font-mono font-bold text-[var(--text-primary)]">Temp@2026</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 ml-6">
-                    <button
-                      onClick={() => handleApproveRequest(request)}
-                      disabled={submitting}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Approuver
-                    </button>
-                    <button
-                      onClick={() => handleRejectRequest(request._id)}
-                      disabled={submitting}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm disabled:opacity-50"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                      Rejeter
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".xlsx, .xls, .csv"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] text-[var(--text-secondary)] rounded-[var(--radius-md)] text-sm font-semibold hover:text-[var(--text-primary)] hover:border-[var(--text-primary)] transition-all disabled:opacity-50 shadow-sm"
+              title="Importer depuis Excel (Colonnes attendues: Prénom, Nom, Email, Téléphone, Fonction, Département)"
+            >
+              {importing ? <LoadingSpinner size="sm" /> : <Upload size={16} />}
+              Importer
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius-md)] text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
+            >
+              <Plus size={16} />
+              Nouvel utilisateur
+            </button>
+          </div>
+      </div>
 
       {/* Users table */}
-      {activeTab === "users" && (
         <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden shadow-sm">
           <table className="w-full">
           <thead className="bg-[var(--bg-inset)] border-b border-[var(--border-default)]">
@@ -542,7 +437,6 @@ export default function UsersPage() {
           </div>
         )}
       </div>
-      )}
 
       {/* Modal */}
       {showModal && (
@@ -638,14 +532,18 @@ export default function UsersPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Fonction
+                  Fonction (Poste EDC)
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.position}
                   onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                   className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                />
+                >
+                  <option value="">Sélectionner une fonction...</option>
+                  {EDC_POSITIONS.map(pos => (
+                    <option key={pos} value={pos}>{pos}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

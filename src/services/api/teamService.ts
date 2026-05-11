@@ -9,40 +9,24 @@ export interface TeamAssignment {
   projectId: string;
   userId: string;
   functionalRole: string;
-  projectRole: 'chef_projet' | 'contributeur' | 'view';
+  projectRole: 'coordinateur_general' | 'coordinateur' | 'chef_projet' | 'contributeur' | 'view';
   level: 'project' | 'component' | 'subcomponent' | 'activity';
   entityId?: string;
   entityName?: string;
   activeInProject: boolean;
   assignedBy?: string;
-  permissions?: string[];
-  newUserData?: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    position: string;
-  };
   createdAt: string;
 }
 
 export interface CreateTeamAssignmentDto {
   projectId: string;
   userId: string;
-  functionalRole: string;
-  projectRole?: 'chef_projet' | 'contributeur' | 'view';
+  functionalRole?: string;
+  projectRole?: 'coordinateur_general' | 'coordinateur' | 'chef_projet' | 'contributeur' | 'view';
   level?: 'project' | 'component' | 'subcomponent' | 'activity';
   entityId?: string;
   entityName?: string;
   assignedBy?: string;
-  permissions?: string[];
-  newUserData?: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    position: string;
-  };
 }
 
 export const teamService = {

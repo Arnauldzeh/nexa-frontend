@@ -12,6 +12,7 @@
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.15.0",
     "clsx": "^2.1.1",
+    "dhtmlx-gantt": "^9.1.4",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",

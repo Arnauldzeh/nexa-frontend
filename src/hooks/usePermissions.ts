@@ -25,7 +25,11 @@ export type UsePermissionsReturn = {
   permissions: Permission[];
   /** Est-ce un admin plateforme ? */
   isAdmin: boolean;
-  /** Est-ce un chef de projet ? */
+  /** Est-ce un coordinateur général ? */
+  isCoordinateurGeneral: boolean;
+  /** Est-ce un coordinateur ? */
+  isCoordinateur: boolean;
+  /** Est-ce un chef de projet (ou rôle supérieur) ? */
   isChefProjet: boolean;
   /** Est-ce un contributeur ? */
   isContributeur: boolean;
@@ -73,7 +77,7 @@ export function usePermissions(projectId?: string): UsePermissionsReturn {
         return;
       }
       if (session.platformRole === "admin") {
-        setProjectRole("chef_projet" as ProjectRole);
+        setProjectRole("coordinateur_general" as ProjectRole);
         return;
       }
       const role = await getUserProjectRole(session.userId, projectId);
@@ -97,18 +101,21 @@ export function usePermissions(projectId?: string): UsePermissionsReturn {
     [platformRole, projectRole],
   );
 
+  const HIGHER_ROLES: ProjectRole[] = ["coordinateur_general", "coordinateur", "chef_projet"];
+
   return {
     user,
     session,
     platformRole,
     projectRole,
-    // TEMPORAIREMENT DÉSACTIVÉ POUR LES TESTS: on permet tout
-    can: () => true,
+    can,
     permissions,
-    isAdmin: true,
-    isChefProjet: true,
-    isContributeur: true,
-    isView: true,
+    isAdmin: platformRole === "admin",
+    isCoordinateurGeneral: projectRole === "coordinateur_general" || platformRole === "admin",
+    isCoordinateur: projectRole === "coordinateur" || projectRole === "coordinateur_general" || platformRole === "admin",
+    isChefProjet: (projectRole !== null && HIGHER_ROLES.includes(projectRole)) || platformRole === "admin",
+    isContributeur: projectRole === "contributeur",
+    isView: projectRole === "view",
     isAuthenticated: session !== null,
   };
 }

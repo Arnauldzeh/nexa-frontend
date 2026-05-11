@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Calendar,
@@ -16,9 +16,9 @@ import {
   BarChart3,
   AlertTriangle,
 } from "lucide-react";
-import { getProjectById, type Project, type Component, type SousComposant } from "@/lib/projectStore";
+import { getProjectById, getLeafActivities, countLeafActivities, type Project, type Component, type SousComposant } from "@/lib/projectStore";
 import { planningService, type Planning } from "@/services/api/planningService";
-import { MSProjectView } from "@/components/planning/MSProjectView";
+import { MSProjectViewV2 } from "@/components/planning/MSProjectViewV2";
 
 // Types d'activités avec couleurs
 const ACTIVITY_TYPES = [
@@ -40,10 +40,21 @@ export default function ProjectPlanningPage() {
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set());
   const [expandedSousComposants, setExpandedSousComposants] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"table" | "gantt">("table");
+  const searchParams = useSearchParams();
+  const focusedActivity = searchParams.get('activity') || undefined;
+  const refreshToken = searchParams.get('t') || '';
 
   useEffect(() => {
     loadData();
   }, [projectCode]);
+
+  // Recharger quand le refreshToken change (après création/modification d'une planification)
+  useEffect(() => {
+    if (refreshToken) {
+      console.log("🔄 Rechargement après sauvegarde, activité ciblée:", focusedActivity);
+      loadData();
+    }
+  }, [refreshToken]);
 
   async function loadData() {
     setLoading(true);
@@ -54,156 +65,94 @@ export default function ProjectPlanningPage() {
         
         // 🎨 DONNÉES MOCK HARDCODÉES pour DEMO-2026
         if (projectCode === 'DEMO-2026') {
-          // Créer des planifications mock complètes pour toutes les activités
+          // Utiliser getLeafActivities pour générer les mocks à TOUS les niveaux
+          const leafActivities = getLeafActivities(proj);
           const mockPlannings: Planning[] = [];
-          let planningIndex = 0;
+          const RESPONSABLES = [
+            'Dr. Amina Ndiaye', 'Ing. Jean-Paul Mbarga', 'Arch. Sophie Kamdem',
+            'Tech. Ibrahim Sow', 'Dr. Marie Fotso', 'Ing. Fatou Diop', 'Arch. Moussa Kane',
+          ];
           
-          proj.components.forEach((comp) => {
-            comp.sousComposants.forEach((sc) => {
-              sc.activities.forEach((act, actIdx) => {
-                const activityPath = `${comp.id}.${sc.id}.A${actIdx + 1}`;
-                const actName = typeof act === 'string' ? act : act.name;
-                const actType = typeof act === 'string' ? 'travaux' : (act.typeActivite || 'travaux');
-                
-                const startDate = new Date(2024, planningIndex % 12, 1);
-                const endDate = new Date(2024 + Math.floor((planningIndex + 6) / 12), (planningIndex + 6) % 12, 28);
-                
-                const mockPlanning: Planning = {
-                  _id: `mock-${activityPath}`,
-                  projectCode: 'DEMO-2026',
-                  activityPath,
-                  activityName: actName,
-                  activityType: actType as any,
-                  hasEtudePrealable: actType === 'etudes',
-                  hasPassation: actType === 'travaux' || actType === 'fourniture',
-                  hasExecution: actType !== 'etudes',
-                  budgetInitial: [{ devise: 'FCFA', montant: 150000000 + (planningIndex * 30000000), pourcentage: 100 }],
-                  budgetInitialTotal: 150000000 + (planningIndex * 30000000),
-                  budgetActualise: [{ devise: 'FCFA', montant: 150000000 + (planningIndex * 30000000), pourcentage: 100 }],
-                  budgetActualiseTotal: 150000000 + (planningIndex * 30000000),
-                  dateDebutInitiale: startDate,
-                  dateFinInitiale: endDate,
-                  delaiInitialMois: 6,
-                  dateDebutActualisee: startDate,
-                  dateFinActualisee: endDate,
-                  delaiActualiseMois: 6,
-                  responsablePrincipal: [
-                    'Dr. Amina Ndiaye',
-                    'Ing. Jean-Paul Mbarga',
-                    'Arch. Sophie Kamdem',
-                    'Tech. Ibrahim Sow',
-                    'Dr. Marie Fotso',
-                    'Ing. Fatou Diop',
-                    'Arch. Moussa Kane',
-                  ][planningIndex % 7],
-                  responsablesSecondaires: [],
-                  livrables: actType === 'etudes' ? [
-                    {
-                      numero: 'R1',
-                      intitule: 'Rapport de démarrage',
-                      ponderation: 15,
-                      delaiMois: 1,
-                      statut: 'valide',
-                    },
-                    {
-                      numero: 'R2',
-                      intitule: 'Rapport intermédiaire',
-                      ponderation: 35,
-                      delaiMois: 3,
-                      statut: 'soumis',
-                    },
-                    {
-                      numero: 'R3',
-                      intitule: 'Rapport final',
-                      ponderation: 50,
-                      delaiMois: 6,
-                      statut: 'en_attente',
-                    },
-                  ] : [],
-                  etapesPassation: (actType === 'travaux' || actType === 'fourniture') ? [
-                    { ordre: 1, nom: 'Rédaction DAO', delaiJours: 20, statut: 'termine' },
-                    { ordre: 2, nom: 'Publication avis', delaiJours: 30, statut: 'en_cours' },
-                    { ordre: 3, nom: 'Réception offres', delaiJours: 7, statut: 'non_demarre' },
-                  ] : [],
-                  tachesExecution: actType !== 'etudes' ? [
-                    {
-                      numero: 'T1',
-                      designation: `Phase 1 - ${actName}`,
-                      unite: actType === 'services' ? 'j' : (actType === 'fourniture' ? 'u' : 'ens'),
-                      quantite: actType === 'services' ? 10 : (actType === 'fourniture' ? 40 : 1),
-                      prixUnitaire: actType === 'services' ? 450000 : (actType === 'fourniture' ? 2500000 : 12000000),
-                      dateDebut: startDate,
-                      dateFin: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
-                      dureeJours: 30,
-                      avancement: 75,
-                      responsable: [
-                        'Dr. Amina Ndiaye',
-                        'Ing. Jean-Paul Mbarga',
-                        'Arch. Sophie Kamdem',
-                        'Tech. Ibrahim Sow',
-                        'Dr. Marie Fotso',
-                        'Ing. Fatou Diop',
-                        'Arch. Moussa Kane',
-                      ][planningIndex % 7],
-                    },
-                    {
-                      numero: 'T2',
-                      designation: `Phase 2 - ${actName}`,
-                      unite: actType === 'services' ? 'j' : (actType === 'fourniture' ? 'u' : 'm²'),
-                      quantite: actType === 'services' ? 25 : (actType === 'fourniture' ? 40 : 2000),
-                      prixUnitaire: actType === 'services' ? 400000 : (actType === 'fourniture' ? 400000 : 50000),
-                      dateDebut: new Date(startDate.getTime() + 31 * 24 * 60 * 60 * 1000),
-                      dateFin: new Date(startDate.getTime() + 120 * 24 * 60 * 60 * 1000),
-                      dureeJours: 90,
-                      avancement: 40,
-                      responsable: [
-                        'Dr. Amina Ndiaye',
-                        'Ing. Jean-Paul Mbarga',
-                        'Arch. Sophie Kamdem',
-                        'Tech. Ibrahim Sow',
-                        'Dr. Marie Fotso',
-                        'Ing. Fatou Diop',
-                        'Arch. Moussa Kane',
-                      ][planningIndex % 7],
-                    },
-                    {
-                      numero: 'T3',
-                      designation: `Phase 3 - ${actName}`,
-                      unite: actType === 'services' ? 'j' : (actType === 'fourniture' ? 'u' : 'm²'),
-                      quantite: actType === 'services' ? 15 : (actType === 'fourniture' ? 40 : 2000),
-                      prixUnitaire: actType === 'services' ? 280000 : (actType === 'fourniture' ? 400000 : 20000),
-                      dateDebut: new Date(startDate.getTime() + 121 * 24 * 60 * 60 * 1000),
-                      dateFin: endDate,
-                      dureeJours: 60,
-                      avancement: 5,
-                      responsable: [
-                        'Dr. Amina Ndiaye',
-                        'Ing. Jean-Paul Mbarga',
-                        'Arch. Sophie Kamdem',
-                        'Tech. Ibrahim Sow',
-                        'Dr. Marie Fotso',
-                        'Ing. Fatou Diop',
-                        'Arch. Moussa Kane',
-                      ][planningIndex % 7],
-                    },
-                  ] : [],
-                  createdBy: 'mock-user',
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                } as Planning;
-                
-                mockPlannings.push(mockPlanning);
-                planningIndex++;
-              });
-            });
+          leafActivities.forEach((leaf, planningIndex) => {
+            const startDate = new Date(2024, planningIndex % 12, 1);
+            const endDate = new Date(2024 + Math.floor((planningIndex + 6) / 12), (planningIndex + 6) % 12, 28);
+            const responsable = RESPONSABLES[planningIndex % RESPONSABLES.length];
+            
+            const mockPlanning: Planning = {
+              _id: `mock-${leaf.path}`,
+              projectCode: 'DEMO-2026',
+              activityPath: leaf.path,
+              activityName: leaf.name,
+              activityType: leaf.type as any,
+              hasEtudePrealable: leaf.type === 'etudes',
+              hasPassation: leaf.type === 'travaux' || leaf.type === 'fourniture',
+              hasExecution: leaf.type !== 'etudes',
+              budgetInitial: [{ devise: 'FCFA', montant: 150000000 + (planningIndex * 30000000), pourcentage: 100 }],
+              budgetInitialTotal: 150000000 + (planningIndex * 30000000),
+              budgetActualise: [{ devise: 'FCFA', montant: 150000000 + (planningIndex * 30000000), pourcentage: 100 }],
+              budgetActualiseTotal: 150000000 + (planningIndex * 30000000),
+              dateDebutInitiale: startDate,
+              dateFinInitiale: endDate,
+              delaiInitialMois: 6,
+              dateDebutActualisee: startDate,
+              dateFinActualisee: endDate,
+              delaiActualiseMois: 6,
+              responsablePrincipal: responsable,
+              responsablesSecondaires: [],
+              livrables: leaf.type === 'etudes' ? [
+                { numero: 'R1', intitule: 'Rapport de démarrage', ponderation: 15, delaiMois: 1, statut: 'valide' },
+                { numero: 'R2', intitule: 'Rapport intermédiaire', ponderation: 35, delaiMois: 3, statut: 'soumis' },
+                { numero: 'R3', intitule: 'Rapport final', ponderation: 50, delaiMois: 6, statut: 'en_attente' },
+              ] : [],
+              etapesPassation: (leaf.type === 'travaux' || leaf.type === 'fourniture') ? [
+                { ordre: 1, nom: 'Rédaction DAO', delaiJours: 20, statut: 'termine' },
+                { ordre: 2, nom: 'Publication avis', delaiJours: 30, statut: 'en_cours' },
+                { ordre: 3, nom: 'Réception offres', delaiJours: 7, statut: 'non_demarre' },
+              ] : [],
+              tachesExecution: leaf.type !== 'etudes' ? [
+                {
+                  numero: 'T1', designation: `Phase 1 - ${leaf.name}`,
+                  unite: leaf.type === 'services' ? 'j' : (leaf.type === 'fourniture' ? 'u' : 'ens'),
+                  quantite: leaf.type === 'services' ? 10 : (leaf.type === 'fourniture' ? 40 : 1),
+                  prixUnitaire: leaf.type === 'services' ? 450000 : (leaf.type === 'fourniture' ? 2500000 : 12000000),
+                  dateDebut: startDate,
+                  dateFin: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
+                  dureeJours: 30, avancement: 75, responsable,
+                },
+                {
+                  numero: 'T2', designation: `Phase 2 - ${leaf.name}`,
+                  unite: leaf.type === 'services' ? 'j' : (leaf.type === 'fourniture' ? 'u' : 'm²'),
+                  quantite: leaf.type === 'services' ? 25 : (leaf.type === 'fourniture' ? 40 : 2000),
+                  prixUnitaire: leaf.type === 'services' ? 400000 : (leaf.type === 'fourniture' ? 400000 : 50000),
+                  dateDebut: new Date(startDate.getTime() + 31 * 24 * 60 * 60 * 1000),
+                  dateFin: new Date(startDate.getTime() + 120 * 24 * 60 * 60 * 1000),
+                  dureeJours: 90, avancement: 40, responsable,
+                },
+                {
+                  numero: 'T3', designation: `Phase 3 - ${leaf.name}`,
+                  unite: leaf.type === 'services' ? 'j' : (leaf.type === 'fourniture' ? 'u' : 'm²'),
+                  quantite: leaf.type === 'services' ? 15 : (leaf.type === 'fourniture' ? 40 : 2000),
+                  prixUnitaire: leaf.type === 'services' ? 280000 : (leaf.type === 'fourniture' ? 400000 : 20000),
+                  dateDebut: new Date(startDate.getTime() + 121 * 24 * 60 * 60 * 1000),
+                  dateFin: endDate,
+                  dureeJours: 60, avancement: 5, responsable,
+                },
+              ] : [],
+              createdBy: 'mock-user',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            } as Planning;
+            
+            mockPlannings.push(mockPlanning);
           });
           
           setPlannings(mockPlannings);
-          console.log(`✅ ${mockPlannings.length} planifications mock chargées pour DEMO-2026`);
+          console.log(`✅ ${mockPlannings.length} planifications mock chargées pour DEMO-2026 (feuilles à tous niveaux)`);
         } else {
           // Pour les autres projets, charger depuis l'API
           try {
             const plans = await planningService.getByProject(projectCode);
+            console.log(`📊 Planifications chargées pour ${projectCode}:`, plans);
             setPlannings(Array.isArray(plans) ? plans : []);
           } catch (error) {
             console.error("Erreur chargement planifications:", error);
@@ -299,10 +248,7 @@ export default function ProjectPlanningPage() {
     );
   }
 
-  const totalActivities = project.components.reduce(
-    (sum, c) => sum + c.sousComposants.reduce((s, sc) => s + sc.activities.length, 0),
-    0
-  );
+  const totalActivities = countLeafActivities(project);
   const plannedActivities = plannings.length;
   const progressPct = totalActivities > 0 ? Math.round((plannedActivities / totalActivities) * 100) : 0;
 
@@ -417,17 +363,18 @@ export default function ProjectPlanningPage() {
         </div>
       </div>
 
-      {/* CONTENT */}
-      <div className="flex-1 overflow-hidden px-8 py-6">
+      {/* CONTENT - Plein écran sans padding */}
+      <div className="flex-1 overflow-hidden">
         {viewMode === "table" ? (
-          <MSProjectView
+          <MSProjectViewV2
             project={project}
             plannings={plannings}
             onActivityClick={(activityPath) => router.push(`/planification/${projectCode}/${activityPath}`)}
             onRefresh={loadData}
+            focusedActivityPath={focusedActivity}
           />
         ) : (
-          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-8 text-center">
+          <div className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] p-8 text-center m-8">
             <BarChart3 size={48} className="mx-auto mb-3 text-[var(--text-tertiary)] opacity-30" />
             <p className="text-sm text-[var(--text-secondary)] font-medium">
               Vue Gantt en cours de développement

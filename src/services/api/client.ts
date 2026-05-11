@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
     switch (status) {
       case 400:
         // Bad Request
-        console.error('Bad request:', errorData);
+        console.error('Bad request details:', JSON.stringify(errorData, null, 2));
         break;
       
       case 401:
@@ -72,8 +72,8 @@ apiClient.interceptors.response.use(
         break;
       
       case 404:
-        // Not Found
-        console.error('Resource not found:', errorData);
+        // Not Found — often expected (e.g., checking if resource exists before creation)
+        console.debug('Resource not found:', errorData);
         break;
       
       case 409:

@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle2, ChevronUp, ChevronDown, Layers } from "lucide-react";
+import { Check, ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle2, ChevronUp, ChevronDown, Layers, DollarSign } from "lucide-react";
 import Link from "next/link";
 import { addProject, generateProjectCode, ACTIVITY_TYPES, getActivityName, getActivityType, isComponentLowestLevel, isSousComposantLowestLevel, type ComponentData, type SousComposantData, type ActivityDef } from "@/lib/projectStore";
 import { toast } from "@/lib/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CURRENCIES, calculatePercentages, calculateTotalBudget, formatCurrency, DEFAULT_EXCHANGE_RATES } from "@/lib/helpers/currencyHelpers";
+import { BailleurMultiCurrency, type CurrencyContribution } from "@/components/financing/BailleurMultiCurrency";
+import { ExchangeRateModal } from "@/components/financing/ExchangeRateModal";
 
 type ConfirmState = {
   type: "component" | "subcomponent" | "activity" | "bailleur" | "partie_publique" | "partie_privee";
@@ -246,7 +248,7 @@ function LocalisationStep({ region, setRegion, departement, setDepartement, vill
             <div className="flex gap-3 p-3 rounded-[var(--radius-md)] bg-blue-500/10 border border-blue-500/20">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 flex-shrink-0 mt-0.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
                 <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
-                    Localisez votre projet en sélectionnant la région, le département et la ville. Les coordonnées GPS seront <strong>détectées automatiquement</strong>.
+                    <strong>Localisation optionnelle :</strong> Vous pouvez localiser votre projet en sélectionnant la région, le département et la ville. Les coordonnées GPS seront <strong>détectées automatiquement</strong>. Vous pouvez aussi laisser vide et compléter plus tard.
                 </p>
             </div>
 
@@ -258,7 +260,6 @@ function LocalisationStep({ region, setRegion, departement, setDepartement, vill
                     options={REGIONS}
                     value={region}
                     onChange={(val) => { setRegion(val); setDepartement(""); setVille(""); setLat(""); setLng(""); setAutoDetected(false); }}
-                    required
                 />
                 <ComboBox
                     label="Département"
@@ -267,7 +268,6 @@ function LocalisationStep({ region, setRegion, departement, setDepartement, vill
                     value={departement}
                     onChange={(val) => { setDepartement(val); setVille(""); setLat(""); setLng(""); setAutoDetected(false); }}
                     disabled={!region}
-                    required
                 />
                 <ComboBox
                     label="Ville / Arrondissement"
@@ -276,7 +276,6 @@ function LocalisationStep({ region, setRegion, departement, setDepartement, vill
                     value={ville}
                     onChange={handleVilleChange}
                     disabled={!departement}
-                    required
                 />
             </div>
 
@@ -422,12 +421,19 @@ export default function NewProjectPage() {
     // Step 3 state (financement)
     const [structureJuridique, setStructureJuridique] = useState<"MOP" | "PPP">("MOP");
     
-    // MOP
+    // MOP - Nouveau format avec devises multiples
     const [budgetNational, setBudgetNational] = useState(false);
     const [budgetNationalMontant, setBudgetNationalMontant] = useState("");
     const [budgetNationalDevise, setBudgetNationalDevise] = useState("FCFA");
     const [budgetNationalPct, setBudgetNationalPct] = useState("0");
-    const [bailleurs, setBailleurs] = useState<Array<{ id: string; nom: string; montant: string; devise: string; pourcentage?: number }>>([]);
+    
+    // Nouveau format : chaque bailleur peut avoir plusieurs devises
+    const [bailleurs, setBailleurs] = useState<Array<{ 
+      id: string; 
+      nom: string; 
+      contributions: CurrencyContribution[]; 
+      pourcentage?: number 
+    }>>([]);
     
     // PPP
     const [partiesPubliques, setPartiesPubliques] = useState<Array<{ id: string; nom: string; montant: string; devise: string; pourcentage?: number }>>([]);
@@ -437,6 +443,7 @@ export default function NewProjectPage() {
     const [budgetDisplayMode, setBudgetDisplayMode] = useState<"detailed" | "converted">("detailed");
     const [conversionCurrency, setConversionCurrency] = useState("FCFA");
     const [exchangeRates, setExchangeRates] = useState(DEFAULT_EXCHANGE_RATES);
+    const [showExchangeRateModal, setShowExchangeRateModal] = useState(false);
 
     const [confirmState, setConfirmState] = useState<ConfirmState>(null);
 
@@ -444,6 +451,42 @@ export default function NewProjectPage() {
     const [components, setComponents] = useState<ComponentData[]>([
         { id: "c1", name: "Barrage", sousComposants: [{ id: "sc1", name: "Fondations", activities: [{ name: "Fouilles", typeActivite: "travaux" }, { name: "Béton de propreté", typeActivite: "travaux" }] }] },
     ]);
+    
+    // États pour gérer le pliage/dépliage dans l'arborescence (Step 5)
+    const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set());
+    const [expandedSousComposants, setExpandedSousComposants] = useState<Set<string>>(new Set());
+    
+    // Initialiser tous les éléments comme dépliés par défaut
+    useEffect(() => {
+        const allCompIds = new Set(components.map(c => c.id));
+        const allScIds = new Set(components.flatMap(c => c.sousComposants.map(sc => sc.id)));
+        setExpandedComponents(allCompIds);
+        setExpandedSousComposants(allScIds);
+    }, [components]);
+    
+    const toggleComponent = (compId: string) => {
+        setExpandedComponents(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(compId)) {
+                newSet.delete(compId);
+            } else {
+                newSet.add(compId);
+            }
+            return newSet;
+        });
+    };
+    
+    const toggleSousComposant = (scId: string) => {
+        setExpandedSousComposants(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(scId)) {
+                newSet.delete(scId);
+            } else {
+                newSet.add(scId);
+            }
+            return newSet;
+        });
+    };
 
     const addComponent = () => {
         // Nouvelle composante sans sous-composantes = niveau le plus bas, donc ajouter typeActivite
@@ -672,7 +715,12 @@ export default function NewProjectPage() {
 
     const handleSelectBailleur = (nom: string) => {
         const id = `b${Date.now()}`;
-        setBailleurs((prev) => [...prev, { id, nom, montant: "0", devise: "FCFA", pourcentage: 0 }]);
+        const initialContribution: CurrencyContribution = {
+          id: `curr-${Date.now()}`,
+          devise: "FCFA",
+          montant: "0",
+        };
+        setBailleurs((prev) => [...prev, { id, nom, contributions: [initialContribution], pourcentage: 0 }]);
         setBailleurSearch("");
         setBailleurDropdownOpen(false);
     };
@@ -680,20 +728,19 @@ export default function NewProjectPage() {
     const handleAddCustomBailleur = () => {
         if (!customBailleurInput.trim()) return;
         const id = `b${Date.now()}`;
-        setBailleurs((prev) => [...prev, { id, nom: customBailleurInput.trim(), montant: "0", devise: "FCFA", pourcentage: 0 }]);
+        const initialContribution: CurrencyContribution = {
+          id: `curr-${Date.now()}`,
+          devise: "FCFA",
+          montant: "0",
+        };
+        setBailleurs((prev) => [...prev, { id, nom: customBailleurInput.trim(), contributions: [initialContribution], pourcentage: 0 }]);
         setCustomBailleurInput("");
         setShowCustomBailleurInput(false);
     };
 
-    // Helpers pour MOP
-    const updateBailleurMontant = (id: string, montant: string) => {
-        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, montant } : b));
-    };
-    const updateBailleurDevise = (id: string, devise: string) => {
-        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, devise } : b));
-    };
-    const updateBailleurPct = (id: string, pct: string) => {
-        setBailleurs(prev => prev.map(b => b.id === id ? { ...b, pourcentage: parseFloat(pct) || 0 } : b));
+    // Helpers pour MOP - Nouveau format multi-devises
+    const updateBailleurContributions = (bailleurId: string, contributions: CurrencyContribution[]) => {
+        setBailleurs(prev => prev.map(b => b.id === bailleurId ? { ...b, contributions } : b));
     };
 
     const removeBailleur = (id: string) => {
@@ -707,12 +754,37 @@ export default function NewProjectPage() {
         });
     };
 
-    // Calculer automatiquement les pourcentages des bailleurs (MOP)
+    // Obtenir toutes les devises utilisées dans le projet
+    const getUsedCurrencies = (): string[] => {
+        const currencies = new Set<string>();
+        
+        if (budgetNational && budgetNationalDevise) {
+            currencies.add(budgetNationalDevise);
+        }
+        
+        bailleurs.forEach(b => {
+            b.contributions.forEach(c => currencies.add(c.devise));
+        });
+        
+        partiesPubliques.forEach(p => currencies.add(p.devise));
+        partiesPrivees.forEach(p => currencies.add(p.devise));
+        
+        return Array.from(currencies);
+    };
+
+    // Calculer automatiquement les pourcentages des bailleurs (MOP) - Nouveau format
     const calculateBailleurPercentages = () => {
-        const contributions = bailleurs.map(b => ({
-            montant: parseFloat(b.montant) || 0,
-            devise: b.devise
-        }));
+        const contributions: Array<{ montant: number; devise: string }> = [];
+        
+        // Ajouter toutes les contributions de tous les bailleurs
+        bailleurs.forEach(b => {
+            b.contributions.forEach(c => {
+                contributions.push({
+                    montant: parseFloat(c.montant) || 0,
+                    devise: c.devise
+                });
+            });
+        });
         
         if (budgetNational) {
             contributions.push({
@@ -723,13 +795,21 @@ export default function NewProjectPage() {
         
         const percentages = calculatePercentages(contributions);
         
-        setBailleurs(prev => prev.map((b, idx) => ({
-            ...b,
-            pourcentage: percentages[idx]
-        })));
+        // Répartir les pourcentages par bailleur
+        let percentageIndex = 0;
+        const updatedBailleurs = bailleurs.map(b => {
+            let bailleurTotal = 0;
+            for (let i = 0; i < b.contributions.length; i++) {
+                bailleurTotal += percentages[percentageIndex] || 0;
+                percentageIndex++;
+            }
+            return { ...b, pourcentage: bailleurTotal };
+        });
         
-        if (budgetNational && percentages.length > bailleurs.length) {
-            setBudgetNationalPct(percentages[percentages.length - 1].toString());
+        setBailleurs(updatedBailleurs);
+        
+        if (budgetNational && percentages.length > percentageIndex) {
+            setBudgetNationalPct(percentages[percentageIndex].toString());
         }
     };
 
@@ -764,7 +844,14 @@ export default function NewProjectPage() {
         if (structureJuridique === "MOP" && (bailleurs.length > 0 || budgetNational)) {
             calculateBailleurPercentages();
         }
-    }, [bailleurs.map(b => `${b.montant}-${b.devise}`).join(','), budgetNational, budgetNationalMontant, budgetNationalDevise, structureJuridique]);
+    }, [
+        // Dépendre des contributions de chaque bailleur (nouveau format multi-devises)
+        bailleurs.map(b => b.contributions.map(c => `${c.montant}-${c.devise}`).join('|')).join(','), 
+        budgetNational, 
+        budgetNationalMontant, 
+        budgetNationalDevise, 
+        structureJuridique
+    ]);
 
     // Recalculer les pourcentages quand les montants changent (PPP)
     useEffect(() => {
@@ -857,15 +944,18 @@ export default function NewProjectPage() {
             let budgetDevise = "FCFA";
 
             if (structureJuridique === "MOP") {
-                // Contributions MOP
+                // Contributions MOP - Nouveau format multi-devises
                 const contributions: Array<{ montant: number; devise: string }> = [];
                 if (budgetNational && parseFloat(budgetNationalMontant) > 0) {
                     contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
                 }
                 bailleurs.forEach(b => {
-                    if (parseFloat(b.montant) > 0) {
-                        contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
-                    }
+                    b.contributions.forEach(c => {
+                        const montant = parseFloat(c.montant) || 0;
+                        if (montant > 0) {
+                            contributions.push({ montant, devise: c.devise });
+                        }
+                    });
                 });
                 totalBudgetFCFA = calculateTotalBudget(contributions, "FCFA", exchangeRates);
             } else {
@@ -884,13 +974,20 @@ export default function NewProjectPage() {
                 totalBudgetFCFA = calculateTotalBudget(contributions, "FCFA", exchangeRates);
             }
 
-            // Préparer les bailleurs au bon format
-            const bailleursFormatted = bailleurs.map(b => ({
-                nom: b.nom,
-                montant: parseFloat(b.montant) || 0,
-                devise: b.devise,
-                pourcentage: b.pourcentage || 0
-            }));
+            // Préparer les bailleurs au bon format - Nouveau format multi-devises
+            const bailleursFormatted = bailleurs.map(b => {
+                // Calculer le montant total du bailleur en additionnant toutes ses contributions
+                const montantTotal = b.contributions.reduce((sum, c) => sum + (parseFloat(c.montant) || 0), 0);
+                // Utiliser la première devise ou FCFA par défaut
+                const deviseprincipale = b.contributions[0]?.devise || "FCFA";
+                
+                return {
+                    nom: b.nom,
+                    montant: montantTotal,
+                    devise: deviseprincipale,
+                    pourcentage: b.pourcentage || 0,
+                };
+            });
 
             // Préparer les parties publiques
             const partiesPubliquesFormatted = partiesPubliques.map(p => ({
@@ -1236,55 +1333,35 @@ export default function NewProjectPage() {
                                             </div>
                                         )}
 
-                                        {/* Liste des bailleurs sélectionnés avec montant, devise et pourcentage */}
+                                        {/* Liste des bailleurs sélectionnés avec devises multiples */}
                                         {bailleurs.length > 0 && (
                                             <div className="space-y-2 mt-2">
                                                 {bailleurs.map((b) => (
-                                                    <div key={b.id} className="p-3 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-[var(--radius-md)] group space-y-2">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0" />
-                                                            <span className="flex-1 text-[13px] font-medium text-[var(--text-primary)] truncate">{b.nom}</span>
-                                                            <button type="button" onClick={() => removeBailleur(b.id)} className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 ml-5">
-                                                            {/* Montant */}
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                value={b.montant}
-                                                                onChange={(e) => updateBailleurMontant(b.id, e.target.value)}
-                                                                placeholder="Montant"
-                                                                className="flex-1 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-                                                            />
-                                                            {/* Devise */}
-                                                            <select
-                                                                value={b.devise}
-                                                                onChange={(e) => updateBailleurDevise(b.id, e.target.value)}
-                                                                className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer w-24"
-                                                            >
-                                                                {CURRENCIES.map(c => (
-                                                                    <option key={c.code} value={c.code}>{c.code}</option>
-                                                                ))}
-                                                            </select>
-                                                            {/* Pourcentage (calculé automatiquement) */}
-                                                            <div className="relative w-20 flex-shrink-0">
-                                                                <input
-                                                                    type="text"
-                                                                    value={b.pourcentage?.toFixed(2) || "0"}
-                                                                    readOnly
-                                                                    className="w-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)] text-right pr-7 cursor-not-allowed"
-                                                                    title="Calculé automatiquement"
-                                                                />
-                                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-tertiary)] font-semibold">%</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <BailleurMultiCurrency
+                                                        key={b.id}
+                                                        bailleurId={b.id}
+                                                        bailleurNom={b.nom}
+                                                        contributions={b.contributions}
+                                                        pourcentageTotal={b.pourcentage}
+                                                        onUpdate={updateBailleurContributions}
+                                                        onRemove={removeBailleur}
+                                                    />
                                                 ))}
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Bouton pour gérer les taux de change */}
+                                    {bailleurs.length > 0 && getUsedCurrencies().length > 1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowExchangeRateModal(true)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 text-blue-600 border border-blue-500/20 rounded-[var(--radius-md)] text-[12px] font-semibold hover:bg-blue-500/20 transition-colors"
+                                        >
+                                            <DollarSign size={14} />
+                                            Configurer les taux de change
+                                        </button>
+                                    )}
 
                                     {/* ── Total MOP ── */}
                                     {(budgetNational || bailleurs.length > 0) && (() => {
@@ -1350,17 +1427,21 @@ export default function NewProjectPage() {
                                                                         </span>
                                                                     </div>
                                                                 )}
-                                                                {bailleurs.map((b) => (
-                                                                    parseFloat(b.montant) > 0 && (
+                                                                {bailleurs.map((b) => {
+                                                                    // Calculer le montant total du bailleur
+                                                                    const montantTotal = b.contributions.reduce((sum, c) => sum + (parseFloat(c.montant) || 0), 0);
+                                                                    if (montantTotal <= 0) return null;
+                                                                    
+                                                                    return (
                                                                         <div key={b.id} className="flex items-center justify-between p-2 bg-[var(--bg-surface)] rounded-[var(--radius-sm)]">
                                                                             <span className="text-[12px] text-[var(--text-secondary)]">{b.nom}</span>
                                                                             <span className="text-[13px] font-bold text-[var(--text-primary)]">
-                                                                                {formatCurrency(parseFloat(b.montant), b.devise)}
+                                                                                {b.contributions.map(c => formatCurrency(parseFloat(c.montant) || 0, c.devise)).join(" + ")}
                                                                                 <span className="text-[11px] text-[var(--text-tertiary)] ml-2">({(b.pourcentage || 0).toFixed(2)}%)</span>
                                                                             </span>
                                                                         </div>
-                                                                    )
-                                                                ))}
+                                                                    );
+                                                                })}
                                                                 <div className="pt-2 mt-2 border-t-2 border-[var(--border-default)]">
                                                                     <div className="flex items-center justify-between">
                                                                         <span className="text-[13px] font-bold text-[var(--text-primary)]">TOTAL</span>
@@ -1392,9 +1473,12 @@ export default function NewProjectPage() {
                                                                                 contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
                                                                             }
                                                                             bailleurs.forEach(b => {
-                                                                                if (parseFloat(b.montant) > 0) {
-                                                                                    contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
-                                                                                }
+                                                                                b.contributions.forEach(c => {
+                                                                                    const montant = parseFloat(c.montant) || 0;
+                                                                                    if (montant > 0) {
+                                                                                        contributions.push({ montant, devise: c.devise });
+                                                                                    }
+                                                                                });
                                                                             });
                                                                             const totalConverted = calculateTotalBudget(contributions, conversionCurrency, exchangeRates);
                                                                             return formatCurrency(totalConverted, conversionCurrency);
@@ -1834,49 +1918,108 @@ export default function NewProjectPage() {
 
                         <div className="bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] p-5">
                             <ul className="space-y-4">
-                                {components.map((comp, ci) => (
-                                    <li key={comp.id}>
-                                        <div className="flex items-center gap-2 text-[14px] font-bold text-[var(--text-primary)]">
-                                            <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[10px] flex-shrink-0">C{ci + 1}</div>
-                                            {comp.name || `Composant ${ci + 1}`}
-                                        </div>
-                                        {comp.sousComposants.length > 0 && (
-                                            <ul className="mt-2 ml-3 pl-4 border-l-2 border-[var(--border-subtle)] space-y-3">
-                                                {comp.sousComposants.map((sc, si) => (
-                                                    <li key={sc.id}>
-                                                        <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text-secondary)]">
-                                                            <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
-                                                            {sc.name || `Sous-composant ${si + 1}`}
-                                                        </div>
-                                                        {sc.activities.length > 0 && (
-                                                            <ul className="mt-2 ml-2 pl-4 border-l border-[var(--border-subtle)] space-y-1.5">
-                                                                {sc.activities.map((act, ai) => {
-                                                                    const actType = getActivityType(act);
-                                                                    const TYPE_COLORS: Record<string, string> = { travaux: "bg-blue-500", fourniture: "bg-amber-500", services: "bg-green-500", etudes: "bg-purple-500", pi: "bg-rose-500" };
-                                                                    return (
-                                                                        <li key={ai} className="flex items-center gap-2 text-[12px] text-[var(--text-tertiary)]">
-                                                                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_COLORS[actType] || "bg-gray-400"}`} />
-                                                                            {getActivityName(act) || `Activité ${ai + 1}`}
-                                                                            <span className="ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] uppercase">
-                                                                                {ACTIVITY_TYPES.find(t => t.id === actType)?.label || "Activité"}
-                                                                            </span>
-                                                                        </li>
-                                                                    );
-                                                                })}
-                                                            </ul>
+                                {components.map((comp, ci) => {
+                                    const isCompExpanded = expandedComponents.has(comp.id);
+                                    return (
+                                        <li key={comp.id}>
+                                            <div className="flex items-center gap-2">
+                                                {/* Bouton plier/déplier composante */}
+                                                {comp.sousComposants.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleComponent(comp.id)}
+                                                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-surface-hover)] transition-colors flex-shrink-0"
+                                                        title={isCompExpanded ? "Replier" : "Déplier"}
+                                                    >
+                                                        {isCompExpanded ? (
+                                                            <ChevronDown size={14} className="text-[var(--text-tertiary)]" />
+                                                        ) : (
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--text-tertiary)]">
+                                                                <path d="M9 18l6-6-6-6" />
+                                                            </svg>
                                                         )}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </li>
-                                ))}
+                                                    </button>
+                                                )}
+                                                {comp.sousComposants.length === 0 && <div className="w-5" />}
+                                                
+                                                <div className="w-6 h-6 bg-blue-500/15 text-blue-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[10px] flex-shrink-0">C{ci + 1}</div>
+                                                <span className="text-[14px] font-bold text-[var(--text-primary)]">
+                                                    {comp.name || `Composant ${ci + 1}`}
+                                                </span>
+                                                {comp.sousComposants.length > 0 && (
+                                                    <span className="text-[10px] text-[var(--text-tertiary)] font-medium">
+                                                        ({comp.sousComposants.length} SC, {comp.sousComposants.reduce((sum, sc) => sum + sc.activities.length, 0)} Act)
+                                                    </span>
+                                                )}
+                                            </div>
+                                            
+                                            {isCompExpanded && comp.sousComposants.length > 0 && (
+                                                <ul className="mt-2 ml-3 pl-4 border-l-2 border-[var(--border-subtle)] space-y-3">
+                                                    {comp.sousComposants.map((sc, si) => {
+                                                        const isScExpanded = expandedSousComposants.has(sc.id);
+                                                        return (
+                                                            <li key={sc.id}>
+                                                                <div className="flex items-center gap-2">
+                                                                    {/* Bouton plier/déplier sous-composante */}
+                                                                    {sc.activities.length > 0 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleSousComposant(sc.id)}
+                                                                            className="w-4 h-4 flex items-center justify-center rounded hover:bg-[var(--bg-surface-hover)] transition-colors flex-shrink-0"
+                                                                            title={isScExpanded ? "Replier" : "Déplier"}
+                                                                        >
+                                                                            {isScExpanded ? (
+                                                                                <ChevronDown size={12} className="text-[var(--text-tertiary)]" />
+                                                                            ) : (
+                                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--text-tertiary)]">
+                                                                                    <path d="M9 18l6-6-6-6" />
+                                                                                </svg>
+                                                                            )}
+                                                                        </button>
+                                                                    )}
+                                                                    {sc.activities.length === 0 && <div className="w-4" />}
+                                                                    
+                                                                    <div className="w-5 h-5 bg-amber-500/15 text-amber-500 rounded-[var(--radius-sm)] flex items-center justify-center font-bold text-[8px] flex-shrink-0">SC</div>
+                                                                    <span className="text-[13px] font-semibold text-[var(--text-secondary)]">
+                                                                        {sc.name || `Sous-composant ${si + 1}`}
+                                                                    </span>
+                                                                    {sc.activities.length > 0 && (
+                                                                        <span className="text-[9px] text-[var(--text-tertiary)] font-medium">
+                                                                            ({sc.activities.length} Act)
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                
+                                                                {isScExpanded && sc.activities.length > 0 && (
+                                                                    <ul className="mt-2 ml-2 pl-4 border-l border-[var(--border-subtle)] space-y-1.5">
+                                                                        {sc.activities.map((act, ai) => {
+                                                                            const actType = getActivityType(act);
+                                                                            const TYPE_COLORS: Record<string, string> = { travaux: "bg-blue-500", fourniture: "bg-amber-500", services: "bg-green-500", etudes: "bg-purple-500", pi: "bg-rose-500" };
+                                                                            return (
+                                                                                <li key={ai} className="flex items-center gap-2 text-[12px] text-[var(--text-tertiary)]">
+                                                                                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_COLORS[actType] || "bg-gray-400"}`} />
+                                                                                    {getActivityName(act) || `Activité ${ai + 1}`}
+                                                                                    <span className="ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] uppercase">
+                                                                                        {ACTIVITY_TYPES.find(t => t.id === actType)?.label || "Activité"}
+                                                                                    </span>
+                                                                                </li>
+                                                                            );
+                                                                        })}
+                                                                    </ul>
+                                                                )}
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </div>
                     </div>
                 )}
 
-                {/* Step 6: Summary */}
                 {currentStep === 6 && (
                     <div className="text-center py-12">
                         <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
@@ -1907,9 +2050,12 @@ export default function NewProjectPage() {
                                                 contributions.push({ montant: parseFloat(budgetNationalMontant), devise: budgetNationalDevise });
                                             }
                                             bailleurs.forEach(b => {
-                                                if (parseFloat(b.montant) > 0) {
-                                                    contributions.push({ montant: parseFloat(b.montant), devise: b.devise });
-                                                }
+                                                b.contributions.forEach(c => {
+                                                    const montant = parseFloat(c.montant) || 0;
+                                                    if (montant > 0) {
+                                                        contributions.push({ montant, devise: c.devise });
+                                                    }
+                                                });
                                             });
                                         } else {
                                             partiesPubliques.forEach(p => {
@@ -1984,6 +2130,18 @@ export default function NewProjectPage() {
                     setConfirmState(null);
                 }}
                 onCancel={() => setConfirmState(null)}
+            />
+
+            <ExchangeRateModal
+                isOpen={showExchangeRateModal}
+                onClose={() => setShowExchangeRateModal(false)}
+                onSave={(rates) => {
+                    setExchangeRates(rates);
+                    calculateBailleurPercentages();
+                    toast.success("Taux de change enregistrés");
+                }}
+                currentRates={exchangeRates}
+                usedCurrencies={getUsedCurrencies()}
             />
         </div>
     );

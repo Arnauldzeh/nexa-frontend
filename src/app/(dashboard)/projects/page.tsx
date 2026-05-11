@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Settings, Plus, Users, Edit2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getProjects, formatProjectBudget, getProjectLocation, type Project } from "@/lib/projectStore";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
@@ -13,6 +14,7 @@ import { getErrorMessage } from "@/services/api/client";
 // ══════════════════════════════════════
 
 export default function ProjectsPage() {
+    const router = useRouter();
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -80,7 +82,11 @@ export default function ProjectsPage() {
                         s + (c.sousComposants?.reduce((ss, sc) => ss + (sc.activities?.length || 0), 0) || 0), 0) || 0;
                     
                     return (
-                        <div key={project.code} className="group bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200">
+                        <div 
+                            key={project.code} 
+                            onClick={() => router.push(`/projects/${project.code}`)}
+                            className="group bg-[var(--bg-surface)] rounded-[var(--radius-lg)] border border-[var(--border-default)] overflow-hidden hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200 cursor-pointer"
+                        >
                             <div className="flex items-center">
                                 {/* Accent stripe */}
                                 <div className="w-1 self-stretch flex-shrink-0 bg-blue-500" />
@@ -119,16 +125,11 @@ export default function ProjectsPage() {
                                     </div>
 
                                     {/* Quick actions */}
-                                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <Link
-                                            href={`/projects/${project.code}`}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold text-[var(--accent)] hover:bg-[var(--accent-subtle)] border border-[var(--accent-subtle)] hover:border-[var(--accent)] transition-all"
-                                        >
-                                            <Edit2 size={12} /> Configurer
-                                        </Link>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
                                         <Link
                                             href={`/projects/${project.code}/team`}
                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-default)] transition-all"
+                                            onClick={(e) => e.stopPropagation()}
                                         >
                                             <Users size={12} /> Équipe
                                         </Link>
