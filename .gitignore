@@ -35,8 +35,6 @@ yarn-error.log*
 .env.local
 .env.local.example
 
-EXAMPLE_API_USAGE.tsx
-
 # vercel
 .vercel
 
@@ -44,6 +42,9 @@ EXAMPLE_API_USAGE.tsx
 *.tsbuildinfo
 next-env.d.ts
 
+# Documentation & examples
 /wireframe
-
 /doc
+EXAMPLE_API_USAGE.tsx
+*.md
+!README.md
