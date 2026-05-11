@@ -217,7 +217,7 @@ export function ActivityPlanningTable({
     
     // Convertir la valeur selon le type de champ
     if (field === 'ponderation' || field === 'duree' || field === 'delai') {
-      newLivrables[rowIndex][field] = value ? parseFloat(value) : undefined;
+      (newLivrables[rowIndex] as any)[field] = value ? parseFloat(value) : (field === 'ponderation' ? 0 : undefined);
     } else {
       (newLivrables[rowIndex] as any)[field] = value || undefined;
     }

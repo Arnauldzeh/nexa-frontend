@@ -899,8 +899,8 @@ export default function ProjectConfigPage() {
             toast.error("Erreur lors de l'enregistrement");
           }
         }}
-        allUsers={allUsers}
-        components={components}
+        projectId={projectId}
+        project={project}
         editingAssignment={editingAssignment}
       />
 

@@ -73,7 +73,7 @@ export function AdminOnly({ fallback = null, children }: AdminOnlyProps) {
 type ProjectRoleGateProps = {
   projectId: string;
   /** Rôles autorisés (au moins un doit correspondre) */
-  roles: Array<"chef_projet" | "contributeur" | "view">;
+  roles: Array<"coordinateur_general" | "coordinateur" | "chef_projet" | "contributeur" | "view">;
   fallback?: React.ReactNode;
   children: React.ReactNode;
 };
