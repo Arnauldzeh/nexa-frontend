@@ -41,8 +41,8 @@ const mockProject: Project = {
       sousComposants: [],
     },
   ],
-  createdAt: new Date(),
-  updatedAt: new Date(),
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
 };
 
 const mockPlannings: Planning[] = [
@@ -82,8 +82,8 @@ const mockPlannings: Planning[] = [
         predecesseur: "R2",
       },
     ],
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
   {
     _id: "plan2",
@@ -111,8 +111,8 @@ const mockPlannings: Planning[] = [
         predecesseur: "T1",
       },
     ],
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
   {
     _id: "plan3",
@@ -147,8 +147,8 @@ const mockPlannings: Planning[] = [
         predecesseur: "L2",
       },
     ],
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 ];
 
