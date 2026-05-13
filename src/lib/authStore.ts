@@ -20,7 +20,7 @@ export type AuthSession = {
   loginAt: string;
 };
 
-const SESSION_KEY = "edc_auth_session";
+const SESSION_KEY = "nexa_auth_session";
 const TOKEN_KEY = "jwt_token";
 
 // ── Session management ──

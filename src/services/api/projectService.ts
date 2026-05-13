@@ -6,13 +6,11 @@ import apiClient, { ApiResponse } from './client';
 
 export interface Activity {
   name: string;
-  typeActivite: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi';
 }
 
 export interface SousComposant {
   id: string;
   name: string;
-  typeActivite?: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi'; // Optionnel, rempli si c'est le niveau le plus bas
   activities: Activity[];
 }
 
@@ -20,7 +18,6 @@ export interface Component {
   id: string;
   name: string;
   budget?: number;
-  typeActivite?: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi'; // Optionnel, rempli si c'est le niveau le plus bas
   sousComposants: SousComposant[];
 }
 

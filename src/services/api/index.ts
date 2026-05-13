@@ -8,7 +8,6 @@ export * from './userService';
 export * from './projectService';
 export * from './documentService';
 export * from './teamService';
-export * from './alertService';
 export * from './dashboardService';
 export * from './healthService';
 export * from './transformers';

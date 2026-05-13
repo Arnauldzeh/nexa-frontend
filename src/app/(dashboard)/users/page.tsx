@@ -16,17 +16,6 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
 import { getErrorMessage } from "@/services/api/client";
 
-const EDC_POSITIONS = [
-  "Directeur Général",
-  "Sous-Directeur",
-  "Chef de Département",
-  "Chef de Service",
-  "Ingénieur",
-  "Financier",
-  "Assistant",
-  "Autre"
-];
-
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -532,18 +521,15 @@ export default function UsersPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1">
-                  Fonction (Poste EDC)
+                  Fonction
                 </label>
-                <select
+                <input
+                  type="text"
                   value={formData.position}
                   onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
-                >
-                  <option value="">Sélectionner une fonction...</option>
-                  {EDC_POSITIONS.map(pos => (
-                    <option key={pos} value={pos}>{pos}</option>
-                  ))}
-                </select>
+                  placeholder="Ex: Chef de projet, Ingénieur, Consultant..."
+                  className="w-full px-3 py-2 bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/20"
+                />
               </div>
 
               <div>

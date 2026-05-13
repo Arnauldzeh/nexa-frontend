@@ -1,20 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
     FolderOpen,
-    Eye,
-    Bell,
     Users,
     ChevronRight,
     ChevronLeft,
     Sun,
     Moon,
     Settings,
-    Calendar,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
@@ -27,7 +23,6 @@ export function Sidebar() {
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [mounted, setMounted] = useState(false);
-    const [alertsCount, setAlertsCount] = useState(0);
     const [hasChefProjetRole, setHasChefProjetRole] = useState(false);
     const { theme, setTheme } = useTheme();
     const { isAdmin, user } = usePermissions();
@@ -49,37 +44,13 @@ export function Sidebar() {
         };
         
         checkUserRole();
-        
-        // Fetch unread alerts count
-        const fetchAlertsCount = async () => {
-            try {
-                const count = await alertService.getCount();
-                setAlertsCount(count);
-            } catch (error) {
-                console.error('Error fetching alerts count:', error);
-            }
-        };
-        
-        fetchAlertsCount();
-        
-        // Refresh count every 30 seconds
-        const interval = setInterval(fetchAlertsCount, 30000);
-        return () => clearInterval(interval);
     }, []);
 
     const navigation = [
         { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
-        { name: "Initialisation", href: "/projects", icon: Settings },
-        { name: "Planification", href: "/planification", icon: Calendar },
+        { name: "Projets", href: "/projects", icon: Settings },
         { name: "Archives", href: "/archives", icon: FolderOpen },
-        { name: "Suivi", href: "/suivi", icon: Eye },
         { name: "Utilisateurs", href: "/users", icon: Users },
-        {
-            name: "Alertes",
-            href: "/alerts",
-            icon: Bell,
-            badge: alertsCount > 0 ? alertsCount : undefined,
-        },
     ];
 
     const isActive = (href: string) => pathname.startsWith(href);
@@ -94,13 +65,13 @@ export function Sidebar() {
         >
             {/* ── Logo ── */}
             <div className={`flex items-center h-14 px-4 border-b border-[var(--border-subtle)] ${isCollapsed ? "justify-center" : "gap-3"}`}>
-                <div className="flex-shrink-0 w-9 h-9 rounded-[var(--radius-md)] overflow-hidden shadow-[var(--shadow-sm)] bg-white">
-                    <Image src="/edc_logo.jpg" alt="EDC" width={36} height={36} className="w-full h-full object-contain" />
+                <div className="flex-shrink-0 w-9 h-9 rounded-[var(--radius-md)] overflow-hidden shadow-[var(--shadow-sm)] bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                    <span className="text-white font-bold text-lg">N</span>
                 </div>
                 {!isCollapsed && (
                     <div className="flex flex-col overflow-hidden whitespace-nowrap">
-                        <span className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">EDC Track</span>
-                        <span className="text-[9px] text-[var(--text-tertiary)] font-semibold tracking-[0.15em] uppercase">Enterprise</span>
+                        <span className="text-[13px] font-bold text-[var(--text-primary)] tracking-tight">NEXA</span>
+                        <span className="text-[9px] text-[var(--text-tertiary)] font-semibold tracking-[0.15em] uppercase">Archives & Projects</span>
                     </div>
                 )}
             </div>
@@ -145,21 +116,6 @@ export function Sidebar() {
 
                             {!isCollapsed && (
                                 <span className="flex-1 whitespace-nowrap overflow-hidden">{item.name}</span>
-                            )}
-
-                            {/* Badge */}
-                            {item.badge != null && item.badge > 0 && (
-                                <span
-                                    className={`
-                                        flex items-center justify-center rounded-full bg-red-500 text-white font-bold
-                                        ${isCollapsed
-                                            ? "absolute top-1 right-1 w-4 h-4 text-[8px]"
-                                            : "text-[9px] min-w-[18px] h-[18px] px-1"
-                                        }
-                                    `}
-                                >
-                                    {item.badge}
-                                </span>
                             )}
                         </Link>
                     );

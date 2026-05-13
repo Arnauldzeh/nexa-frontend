@@ -104,7 +104,7 @@ export function getActivityName(act: string | Activity): string {
 }
 
 export function getActivityType(act: string | Activity): string {
-  return typeof act === "string" ? "travaux" : act.typeActivite;
+  return "default";
 }
 
 /**
@@ -197,7 +197,7 @@ export function getLeafActivities(project: Project): LeafActivity[] {
             leaves.push({
               path: `${comp.id}.${sc.id}.A${idx + 1}`,
               name: actName,
-              type: actType,
+              type: 'activity',
               depth: 'activity',
               componentId: comp.id,
               componentName: comp.name,

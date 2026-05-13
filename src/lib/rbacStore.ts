@@ -1,6 +1,6 @@
 // ══════════════════════════════════════
 // RBAC STORE — Role-Based Access Control
-// Moteur de permissions pour EDC Track
+// Moteur de permissions pour NEXA
 // Hiérarchie : View < Contributeur < Chef Projet < Coordinateur < Coordinateur Général
 // ══════════════════════════════════════
 

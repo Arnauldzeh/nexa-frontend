@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, ChevronRight, AlertCircle, Search } from "lucide-react";
+import { FolderOpen, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import { getProjects, type Project } from "@/lib/projectStore";
-import { getProjectAlerts } from "@/lib/alertStore";
 
 export default function ArchivesPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
-    const [projectAlerts, setProjectAlerts] = useState<Record<string, number>>({});
 
     useEffect(() => {
         loadData();
@@ -18,22 +16,6 @@ export default function ArchivesPage() {
     async function loadData() {
         const projectsData = await getProjects();
         setProjects(projectsData);
-
-        // Load alert counts for each project
-        const alertCounts: Record<string, number> = {};
-        for (const project of projectsData) {
-            try {
-                const alerts = await getProjectAlerts(project.code);
-                alertCounts[project.code] = alerts.filter(a => !a.isRead).length;
-            } catch {
-                alertCounts[project.code] = 0;
-            }
-        }
-        setProjectAlerts(alertCounts);
-    }
-
-    function getUnresolvedCountForProject(projectCode: string): number {
-        return projectAlerts[projectCode] || 0;
     }
 
     const filtered = projects.filter((p) =>
@@ -105,13 +87,6 @@ export default function ArchivesPage() {
                                         />
                                     </div>
                                 </div>
-
-                                {/* Alerts */}
-                                {getUnresolvedCountForProject(project.code) > 0 && (
-                                    <span className="flex items-center gap-1 text-[12px] font-semibold text-red-500">
-                                        <AlertCircle size={14} /> {getUnresolvedCountForProject(project.code)}
-                                    </span>
-                                )}
 
                                 {/* Arrow */}
                                 <ChevronRight size={16} className="text-[var(--text-tertiary)] group-hover:text-[var(--accent)] group-hover:translate-x-0.5 transition-all flex-shrink-0" />
