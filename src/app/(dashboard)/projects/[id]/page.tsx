@@ -170,10 +170,8 @@ export default function ProjectConfigPage() {
   const addSousComposant = (compIdx: number) => {
     setComponents(prev => prev.map((c, i) => {
       if (i !== compIdx) return c;
-      // Quand on ajoute une sous-composante, retirer le typeActivite de la composante
-      const { typeActivite, ...compWithoutType } = c;
       return { 
-        ...compWithoutType, 
+        ...c, 
         sousComposants: [...c.sousComposants, { id: `sc${Date.now()}`, name: "", activities: [] }] 
       };
     }));
