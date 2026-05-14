@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,17 +39,11 @@ export default function LoginPage() {
         <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
             {/* Logo & Name - Top Left (visible on all screens) */}
             <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg overflow-hidden shadow-lg bg-white p-1">
-                    <Image 
-                        src="/edc_logo.jpg" 
-                        alt="EDC Logo" 
-                        width={40} 
-                        height={40} 
-                        className="w-full h-full object-contain"
-                    />
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <span className="text-white text-xl font-bold">N</span>
                 </div>
                 <div className="text-left">
-                    <h1 className="text-base font-bold text-white">EDC Track</h1>
+                    <h1 className="text-base font-bold text-white">NEXA</h1>
                     <p className="text-blue-100 text-[10px]">Gestion de Projets</p>
                 </div>
             </div>
@@ -71,7 +64,7 @@ export default function LoginPage() {
                         </h2>
                         <div className="w-16 h-0.5 bg-white/30 mx-auto mb-4"></div>
                         <p className="text-blue-100 text-base leading-relaxed">
-                            Plateforme de gestion et de suivi des projets d'infrastructure électrique au Cameroun
+                            Numérisation et eXploitation des Archives
                         </p>
                     </div>
                 </div>
@@ -207,7 +200,7 @@ export default function LoginPage() {
 
                     {/* Footer */}
                     <p className="mt-4 text-center text-[10px] text-gray-500">
-                        © 2026 Electricity Development Corporation. Tous droits réservés.
+                        © 2026 NEXA. Tous droits réservés.
                     </p>
                 </div>
             </div>
