@@ -33,11 +33,11 @@ export const ACTIVITY_TYPES = [
   { id: "pi", label: "Prestations Intellectuelles", color: "bg-rose-500", bgColor: "bg-rose-500/10 text-rose-600 border-rose-500/20" },
 ];
 
-const getActivityName = (act: string | { name: string; typeActivite: string }): string =>
+const getActivityName = (act: string | { name: string; typeActivite?: string }): string =>
   typeof act === "string" ? act : act.name;
 
-const getActivityType = (act: string | { name: string; typeActivite: string }): string =>
-  typeof act === "string" ? "travaux" : act.typeActivite;
+const getActivityType = (act: string | { name: string; typeActivite?: string }): string =>
+  typeof act === "string" ? "travaux" : (act.typeActivite || "travaux");
 
 // ══════════════════════════════════════
 // PAGE
@@ -208,9 +208,7 @@ export default function ProjectConfigPage() {
         ...c,
         sousComposants: c.sousComposants.map((sc, si) => {
           if (si !== scIdx) return sc;
-          // Quand on ajoute une activité, retirer le typeActivite de la sous-composante
-          const { typeActivite: scType, ...scWithoutType } = sc;
-          return { ...scWithoutType, activities: [...sc.activities, newAct] };
+          return { ...sc, activities: [...sc.activities, newAct] };
         })
       };
     }));

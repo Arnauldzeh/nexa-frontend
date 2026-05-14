@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { alertService } from "@/services/api";
 import { usePermissions } from "@/hooks/usePermissions";
 import { UserSessionSwitcher } from "@/components/auth/AuthProvider";
 import { getUserProjects } from "@/lib/userStore";

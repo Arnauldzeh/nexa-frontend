@@ -6,12 +6,14 @@ import apiClient, { ApiResponse } from './client';
 
 export interface Activity {
   name: string;
+  typeActivite?: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi';
 }
 
 export interface SousComposant {
   id: string;
   name: string;
   activities: Activity[];
+  typeActivite?: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi';
 }
 
 export interface Component {
@@ -19,6 +21,7 @@ export interface Component {
   name: string;
   budget?: number;
   sousComposants: SousComposant[];
+  typeActivite?: 'travaux' | 'fourniture' | 'services' | 'etudes' | 'pi';
 }
 
 export interface Coordinates {
