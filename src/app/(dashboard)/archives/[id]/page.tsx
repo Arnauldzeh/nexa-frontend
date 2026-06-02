@@ -991,16 +991,33 @@ export default function ProjectConfigPage() {
     fileIdx: number;
   }) => {
     const isOpen = openActionMenu === fileKey;
+    const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0, right: 0 });
+    const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+    React.useEffect(() => {
+      if (isOpen && buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + 4,
+          right: window.innerWidth - rect.right,
+        });
+      }
+    }, [isOpen]);
+
     return (
       <div className="relative" onClick={(e) => e.stopPropagation()}>
         <button
+          ref={buttonRef}
           onClick={() => setOpenActionMenu(isOpen ? null : fileKey)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-md)] text-[11px] font-semibold border transition-all ${isOpen ? "bg-[var(--accent)] text-white border-transparent" : "bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-default)] hover:border-[var(--text-tertiary)]"}`}
         >
           <MoreHorizontal size={13} />
         </button>
         {isOpen && (
-          <div className="absolute right-0 top-full mt-1 w-52 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] shadow-[var(--shadow-lg)] z-50 py-1 overflow-hidden">
+          <div 
+            className="fixed w-52 bg-[var(--bg-surface)] rounded-[var(--radius-md)] border border-[var(--border-default)] shadow-[var(--shadow-lg)] z-[100] py-1"
+            style={{ top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}
+          >
             <button
               onClick={() => {
                 setShowValidateModal({ docIdx, fileIdx, fileName });
@@ -1505,43 +1522,51 @@ export default function ProjectConfigPage() {
     confirmLabel: string;
     onCancel: () => void;
     onConfirm: (reason: string) => void;
-  }) => (
-    <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-      onClick={onCancel}
-    >
+  }) => {
+    const [localReason, setLocalReason] = React.useState(reasonInput);
+
+    return (
       <div
-        className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] w-full max-w-md p-6 border border-[var(--border-default)]"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+        onClick={onCancel}
       >
-        <h4 className="text-sm font-bold text-[var(--text-primary)] mb-3">
-          {title}
-        </h4>
-        <textarea
-          value={reasonInput}
-          onChange={(e) => setReasonInput(e.target.value)}
-          placeholder="Saisissez le motif..."
-          rows={4}
-          className="w-full px-3 py-2 text-sm bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-        />
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-xs font-bold text-[var(--text-secondary)]"
-          >
-            Annuler
-          </button>
-          <button
-            onClick={() => onConfirm(reasonInput)}
-            disabled={!reasonInput.trim()}
-            className="px-4 py-2 bg-[var(--accent)] text-white text-xs font-bold rounded-[var(--radius-md)] disabled:opacity-50"
-          >
-            {confirmLabel}
-          </button>
+        <div
+          className="bg-[var(--bg-surface)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] w-full max-w-md p-6 border border-[var(--border-default)]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h4 className="text-sm font-bold text-[var(--text-primary)] mb-3">
+            {title}
+          </h4>
+          <textarea
+            value={localReason}
+            onChange={(e) => setLocalReason(e.target.value)}
+            placeholder="Saisissez le motif..."
+            rows={4}
+            autoFocus
+            className="w-full px-3 py-2 text-sm bg-[var(--bg-inset)] border border-[var(--border-default)] rounded-[var(--radius-md)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+          />
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-xs font-bold text-[var(--text-secondary)]"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                setReasonInput(localReason);
+                onConfirm(localReason);
+              }}
+              disabled={!localReason.trim()}
+              className="px-4 py-2 bg-[var(--accent)] text-white text-xs font-bold rounded-[var(--radius-md)] disabled:opacity-50"
+            >
+              {confirmLabel}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const TrashModal = () => {
     if (!showTrashModal) return null;
