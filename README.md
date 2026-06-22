@@ -2,7 +2,13 @@
 
 Application web de gestion de projets et d'archivage de documents.
 
-## 🚀 Technologies
+**DEMO :** [https://master.d3rv7wqdgixsbn.amplifyapp.com/](https://master.d3rv7wqdgixsbn.amplifyapp.com/)
+
+**Identifiants de test :**
+- Login : `admin`
+- Mot de passe : `admin123`
+
+## Technologies
 
 - **Next.js 16** - Framework React
 - **TypeScript** - Typage statique
@@ -11,13 +17,13 @@ Application web de gestion de projets et d'archivage de documents.
 - **Recharts** - Graphiques
 - **Leaflet** - Cartes interactives
 
-## 📋 Prérequis
+## Prérequis
 
 - Node.js 18+ 
 - npm ou yarn
 - Backend NEXA en cours d'exécution
 
-## 🛠️ Installation
+## Installation
 
 1. Cloner le repository :
 ```bash
@@ -40,7 +46,7 @@ cp .env.example .env.local
 NEXT_PUBLIC_API_URL=http://localhost:4000/api
 ```
 
-## 🏃 Développement
+## Développement
 
 Lancer le serveur de développement :
 ```bash
@@ -49,7 +55,7 @@ npm run dev
 
 L'application sera accessible sur [http://localhost:3000](http://localhost:3000)
 
-## 🏗️ Build Production
+## Build Production
 
 Créer un build optimisé :
 ```bash
@@ -61,7 +67,7 @@ Lancer le serveur de production :
 npm start
 ```
 
-## 📦 Déploiement
+## Déploiement
 
 ### AWS Amplify (Recommandé)
 
@@ -70,21 +76,8 @@ npm start
    - `NEXT_PUBLIC_API_URL` : URL de votre backend
 3. Déployer automatiquement à chaque push
 
-### Vercel
 
-```bash
-npm install -g vercel
-vercel
-```
-
-### Docker
-
-```bash
-docker build -t nexa-frontend .
-docker run -p 3000:3000 nexa-frontend
-```
-
-## 🔧 Configuration
+## Configuration
 
 ### Variables d'environnement
 
@@ -92,42 +85,12 @@ docker run -p 3000:3000 nexa-frontend
 |----------|-------------|---------|
 | `NEXT_PUBLIC_API_URL` | URL du backend API | `https://api.nexa.app/api` |
 
-## 📁 Structure du projet
+## Fonctionnalités
 
-```
-frontend/
-├── src/
-│   ├── app/              # Pages Next.js (App Router)
-│   │   ├── (dashboard)/  # Routes protégées
-│   │   └── login/        # Page de connexion
-│   ├── components/       # Composants React
-│   │   ├── layout/       # Layout (Sidebar, Header)
-│   │   └── ui/           # Composants UI réutilisables
-│   ├── lib/              # Stores et helpers
-│   ├── services/         # Services API
-│   └── styles/           # Styles globaux
-├── public/               # Assets statiques
-└── package.json
-```
-
-## 🎨 Fonctionnalités
-
-- ✅ Gestion de projets
-- ✅ Archivage de documents
-- ✅ Gestion d'équipe
-- ✅ Tableau de bord avec statistiques
-- ✅ Système de permissions (RBAC)
-- ✅ Mode sombre/clair
-- ✅ Interface responsive
-
-## 🔐 Authentification
-
-L'application utilise JWT pour l'authentification. Les tokens sont stockés dans le localStorage.
-
-## 📝 License
-
-Propriétaire - NEXA Team
-
-## 🤝 Support
-
-Pour toute question ou problème, contactez l'équipe NEXA.
+- Gestion de projets
+- Archivage de documents
+- Gestion d'équipe
+- Tableau de bord avec statistiques
+- Système de permissions (RBAC)
+- Mode sombre/clair
+- Interface responsive
